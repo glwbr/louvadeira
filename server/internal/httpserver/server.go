@@ -82,6 +82,7 @@ func New(d Deps) http.Handler {
 	admin("PUT /api/ministries/{id}/roles/order", d.reorderRoles)
 
 	admin("GET /api/ministries/{id}/schedules/{month}", d.getSchedule)
+	admin("DELETE /api/ministries/{id}/schedules/{month}", d.discardSchedule)
 	admin("POST /api/ministries/{id}/schedules/{month}/generate", d.generateSchedule)
 	admin("POST /api/ministries/{id}/schedules/{month}/publish", d.publishSchedule)
 	admin("PUT /api/ministries/{id}/schedules/{month}/assignments/{assignmentId}", d.setAssignment)

@@ -2,9 +2,27 @@ package store
 
 import (
 	"context"
-	"strings"
 	"time"
 )
+
+type Reason string
+
+const (
+	ReasonTravel  Reason = "viagem"
+	ReasonWork    Reason = "trabalho"
+	ReasonHealth  Reason = "saude"
+	ReasonFamily  Reason = "familia"
+	ReasonStudies Reason = "estudos"
+	ReasonOther   Reason = "outro"
+)
+
+func (r Reason) valid() bool {
+	switch r {
+	case ReasonTravel, ReasonWork, ReasonHealth, ReasonFamily, ReasonStudies, ReasonOther:
+		return true
+	}
+	return false
+}
 
 type Unavailability struct {
 	ID         int64  `json:"id"`
@@ -12,14 +30,14 @@ type Unavailability struct {
 	PersonName string `json:"personName"`
 	StartDate  string `json:"startDate"`
 	EndDate    string `json:"endDate"`
-	Note       string `json:"note"`
+	Reason     Reason `json:"reason"`
 }
 
 type UnavailabilityInput struct {
 	PersonID  int64  `json:"personId"`
 	StartDate string `json:"startDate"`
 	EndDate   string `json:"endDate"`
-	Note      string `json:"note"`
+	Reason    Reason `json:"reason"`
 }
 
 func validDate(value, field string) (string, error) {
@@ -44,11 +62,10 @@ func (in UnavailabilityInput) clean() (UnavailabilityInput, error) {
 	if end < start {
 		return in, invalid("a data final vem antes da inicial")
 	}
-	note := strings.TrimSpace(in.Note)
-	if len([]rune(note)) > 200 {
-		return in, invalid("o motivo pode ter no máximo 200 caracteres")
+	if !in.Reason.valid() {
+		return in, invalid("escolha o motivo")
 	}
-	return UnavailabilityInput{PersonID: in.PersonID, StartDate: start, EndDate: end, Note: note}, nil
+	return UnavailabilityInput{PersonID: in.PersonID, StartDate: start, EndDate: end, Reason: in.Reason}, nil
 }
 
 /**
@@ -56,7 +73,7 @@ func (in UnavailabilityInput) clean() (UnavailabilityInput, error) {
  */
 func (s *Store) ListUnavailabilities(ctx context.Context, from, to string) ([]Unavailability, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT u.id, u.person_id, p.name, u.start_date, u.end_date, u.note
+		SELECT u.id, u.person_id, p.name, u.start_date, u.end_date, u.reason
 		FROM unavailabilities u JOIN people p ON p.id = u.person_id
 		WHERE u.start_date <= ? AND u.end_date >= ? AND p.archived_at IS NULL
 		ORDER BY u.start_date, p.name COLLATE NOCASE`, to, from)
@@ -67,7 +84,7 @@ func (s *Store) ListUnavailabilities(ctx context.Context, from, to string) ([]Un
 	list := []Unavailability{}
 	for rows.Next() {
 		var u Unavailability
-		if err := rows.Scan(&u.ID, &u.PersonID, &u.PersonName, &u.StartDate, &u.EndDate, &u.Note); err != nil {
+		if err := rows.Scan(&u.ID, &u.PersonID, &u.PersonName, &u.StartDate, &u.EndDate, &u.Reason); err != nil {
 			return nil, err
 		}
 		list = append(list, u)
@@ -80,12 +97,12 @@ func (s *Store) CreateUnavailability(ctx context.Context, in UnavailabilityInput
 	if err != nil {
 		return Unavailability{}, err
 	}
-	u := Unavailability{PersonID: in.PersonID, StartDate: in.StartDate, EndDate: in.EndDate, Note: in.Note}
+	u := Unavailability{PersonID: in.PersonID, StartDate: in.StartDate, EndDate: in.EndDate, Reason: in.Reason}
 	err = s.db.QueryRowContext(ctx, `
-		INSERT INTO unavailabilities (person_id, start_date, end_date, note)
+		INSERT INTO unavailabilities (person_id, start_date, end_date, reason)
 		SELECT id, ?, ?, ? FROM people WHERE id = ? AND archived_at IS NULL
 		RETURNING id, (SELECT name FROM people WHERE id = person_id)`,
-		in.StartDate, in.EndDate, in.Note, in.PersonID).Scan(&u.ID, &u.PersonName)
+		in.StartDate, in.EndDate, in.Reason, in.PersonID).Scan(&u.ID, &u.PersonName)
 	return u, notFoundIfNoRows(err)
 }
 

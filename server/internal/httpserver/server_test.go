@@ -334,6 +334,14 @@ func TestScheduleFlow(t *testing.T) {
 	if rec := h.do(http.MethodPut, fmt.Sprintf("%s/2026-12/assignments/%d", base, slot), `{"personId":null}`); rec.Code != http.StatusNoContent {
 		t.Fatalf("clear slot: %d %s", rec.Code, rec.Body)
 	}
+	if rec := h.do(http.MethodDelete, base+"/2026-12", ""); rec.Code != http.StatusNoContent {
+		t.Fatalf("discard draft: %d %s", rec.Code, rec.Body)
+	}
+	rec = h.do(http.MethodPost, base+"/2026-12/generate", "")
+	slot = decode[store.ScheduleView](t, rec).Weeks[0].Services[0].Roles[0].Slots[0].AssignmentID
+	if rec := h.do(http.MethodPut, fmt.Sprintf("%s/2026-12/assignments/%d", base, slot), `{"personId":null}`); rec.Code != http.StatusNoContent {
+		t.Fatalf("clear slot again: %d %s", rec.Code, rec.Body)
+	}
 	if rec := h.do(http.MethodPost, base+"/2026-12/publish", ""); rec.Code != http.StatusNoContent {
 		t.Fatalf("publish: %d %s", rec.Code, rec.Body)
 	}
@@ -346,7 +354,7 @@ func TestScheduleFlow(t *testing.T) {
 		t.Fatalf("published view: status %s, warnings %d", view.Status, view.Warnings)
 	}
 
-	rec = h.do(http.MethodPost, "/api/unavailabilities", fmt.Sprintf(`{"personId":%d,"startDate":"2026-12-24","endDate":"2026-12-26","note":"Natal"}`, bassist.ID))
+	rec = h.do(http.MethodPost, "/api/unavailabilities", fmt.Sprintf(`{"personId":%d,"startDate":"2026-12-24","endDate":"2026-12-26","reason":"familia"}`, bassist.ID))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create unavailability: %d %s", rec.Code, rec.Body)
 	}

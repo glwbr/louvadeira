@@ -49,6 +49,7 @@ type ScheduleService struct {
 	Date      string         `json:"date"`
 	Name      string         `json:"name"`
 	StartTime string         `json:"startTime"`
+	Communion bool           `json:"communion"`
 	Roles     []ScheduleRole `json:"roles"`
 }
 
@@ -220,6 +221,22 @@ func (s *Store) SetAssignment(ctx context.Context, ministryID int64, month strin
 	return err
 }
 
+/**
+ * NOTE: Only drafts can be discarded; a published schedule is history and changes to it are swaps.
+ */
+func (s *Store) DiscardDraft(ctx context.Context, ministryID int64, month string) error {
+	var status string
+	err := s.db.QueryRowContext(ctx, "SELECT status FROM schedules WHERE ministry_id = ? AND month = ?", ministryID, month).Scan(&status)
+	if err != nil {
+		return notFoundIfNoRows(err)
+	}
+	if status == StatusPublished {
+		return ErrPublished
+	}
+	_, err = s.db.ExecContext(ctx, "DELETE FROM schedules WHERE ministry_id = ? AND month = ? AND status = 'draft'", ministryID, month)
+	return err
+}
+
 func (s *Store) PublishSchedule(ctx context.Context, ministryID int64, month string, now time.Time) error {
 	return requireAffected(s.db.ExecContext(ctx, `
 		UPDATE schedules SET status = 'published', published_at = ?
@@ -250,7 +267,7 @@ func (s *Store) ScheduleView(ctx context.Context, ministryID int64, month string
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT a.id, a.service_id, a.service_date, sv.name, sv.start_time, a.role_id, r.name, coalesce(a.person_id, 0), coalesce(p.name, '')
+		SELECT a.id, a.service_id, a.service_date, sv.name, sv.start_time, sv.communion_week, a.role_id, r.name, coalesce(a.person_id, 0), coalesce(p.name, '')
 		FROM assignments a
 		JOIN services sv ON sv.id = a.service_id
 		JOIN roles r ON r.id = a.role_id
@@ -273,10 +290,12 @@ func (s *Store) ScheduleView(ctx context.Context, ministryID int64, month string
 		var occurrence ScheduleService
 		var roleID int64
 		var roleName string
+		var communionWeek sql.NullInt64
 		if err := rows.Scan(&slot.AssignmentID, &occurrence.ServiceID, &occurrence.Date, &occurrence.Name, &occurrence.StartTime,
-			&roleID, &roleName, &slot.PersonID, &slot.PersonName); err != nil {
+			&communionWeek, &roleID, &roleName, &slot.PersonID, &slot.PersonName); err != nil {
 			return ScheduleView{}, err
 		}
+		occurrence.Communion = communionWeek.Valid && nthWeekdayOfMonth(occurrence.Date) == int(communionWeek.Int64)
 		key := occurrenceKey{occurrence.Date, occurrence.ServiceID}
 		current := byKey[key]
 		if current == nil {
@@ -378,4 +397,12 @@ func containsID(ids []int64, id int64) bool {
 		}
 	}
 	return false
+}
+
+func nthWeekdayOfMonth(date string) int {
+	t, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return 0
+	}
+	return (t.Day()-1)/7 + 1
 }

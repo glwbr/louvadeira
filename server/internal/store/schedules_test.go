@@ -139,7 +139,7 @@ func TestEditingSlotsAndWarnings(t *testing.T) {
 	if err := s.SetAssignment(ctx, w.ministry.ID, "2026-12", bassSlot.AssignmentID, nil); err != nil {
 		t.Fatal(err)
 	}
-	_, err := s.CreateUnavailability(ctx, store.UnavailabilityInput{PersonID: w.people["Eli"].ID, StartDate: "2026-12-06"})
+	_, err := s.CreateUnavailability(ctx, store.UnavailabilityInput{PersonID: w.people["Eli"].ID, StartDate: "2026-12-06", Reason: store.ReasonWork})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,14 +160,17 @@ func TestEditingSlotsAndWarnings(t *testing.T) {
 func TestUnavailabilities(t *testing.T) {
 	s, ctx := newStore(t), context.Background()
 	p, _ := s.CreatePerson(ctx, store.PersonInput{Name: "Gabi"})
-	if _, err := s.CreateUnavailability(ctx, store.UnavailabilityInput{PersonID: p.ID, StartDate: "2026-12-10", EndDate: "2026-12-01"}); !isValidation(err) {
+	if _, err := s.CreateUnavailability(ctx, store.UnavailabilityInput{PersonID: p.ID, StartDate: "2026-12-10", EndDate: "2026-12-01", Reason: store.ReasonTravel}); !isValidation(err) {
 		t.Fatalf("end before start: err = %v", err)
 	}
-	if _, err := s.CreateUnavailability(ctx, store.UnavailabilityInput{PersonID: 999, StartDate: "2026-12-10"}); !errors.Is(err, store.ErrNotFound) {
+	if _, err := s.CreateUnavailability(ctx, store.UnavailabilityInput{PersonID: p.ID, StartDate: "2026-12-10", Reason: "passeio"}); !isValidation(err) {
+		t.Fatalf("reason outside the list: err = %v", err)
+	}
+	if _, err := s.CreateUnavailability(ctx, store.UnavailabilityInput{PersonID: 999, StartDate: "2026-12-10", Reason: store.ReasonTravel}); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing person: err = %v", err)
 	}
-	u, err := s.CreateUnavailability(ctx, store.UnavailabilityInput{PersonID: p.ID, StartDate: "2026-12-10", EndDate: "2026-12-20", Note: " viagem "})
-	if err != nil || u.PersonName != "Gabi" || u.Note != "viagem" {
+	u, err := s.CreateUnavailability(ctx, store.UnavailabilityInput{PersonID: p.ID, StartDate: "2026-12-10", EndDate: "2026-12-20", Reason: store.ReasonTravel})
+	if err != nil || u.PersonName != "Gabi" || u.Reason != store.ReasonTravel {
 		t.Fatalf("created = %+v, err = %v", u, err)
 	}
 	for _, c := range []struct {
@@ -219,4 +222,56 @@ func sameSet(a, b []int64) bool {
 		}
 	}
 	return true
+}
+
+func TestCommunionSundaysAreMarked(t *testing.T) {
+	s, ctx := newStore(t), context.Background()
+	w := setUpWorship(t, s)
+	services, _ := s.ListServices(ctx)
+	third := 3
+	for _, sv := range services {
+		if sv.Weekday == 0 {
+			updated, err := s.UpdateService(ctx, sv.ID, store.ServiceInput{Name: sv.Name, Weekday: 0, StartTime: sv.StartTime, Active: true, CommunionWeek: &third})
+			if err != nil || updated.CommunionWeek == nil || *updated.CommunionWeek != 3 {
+				t.Fatalf("updated = %+v, err = %v", updated, err)
+			}
+		}
+	}
+	_ = s.GenerateDraft(ctx, w.ministry.ID, "2026-12", generatedAt)
+	view, _ := s.ScheduleView(ctx, w.ministry.ID, "2026-12")
+	var marked []string
+	for _, week := range view.Weeks {
+		for _, sv := range week.Services {
+			if sv.Communion {
+				marked = append(marked, sv.Date)
+			}
+		}
+	}
+	if len(marked) != 1 || marked[0] != "2026-12-20" {
+		t.Fatalf("communion dates = %v, want the third Sunday (2026-12-20)", marked)
+	}
+	five := 5
+	if _, err := s.CreateService(ctx, store.ServiceInput{Name: "Extra", Weekday: 0, StartTime: "08:00", CommunionWeek: &five}); !isValidation(err) {
+		t.Fatalf("communion week 5: err = %v", err)
+	}
+}
+
+func TestDiscardDraftOnlyForDrafts(t *testing.T) {
+	s, ctx := newStore(t), context.Background()
+	w := setUpWorship(t, s)
+	if err := s.DiscardDraft(ctx, w.ministry.ID, "2026-12"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("nothing to discard: err = %v", err)
+	}
+	_ = s.GenerateDraft(ctx, w.ministry.ID, "2026-12", generatedAt)
+	if err := s.DiscardDraft(ctx, w.ministry.ID, "2026-12"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ScheduleView(ctx, w.ministry.ID, "2026-12"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("after discard: err = %v", err)
+	}
+	_ = s.GenerateDraft(ctx, w.ministry.ID, "2026-12", generatedAt)
+	_ = s.PublishSchedule(ctx, w.ministry.ID, "2026-12", generatedAt)
+	if err := s.DiscardDraft(ctx, w.ministry.ID, "2026-12"); !errors.Is(err, store.ErrPublished) {
+		t.Fatalf("discard published: err = %v", err)
+	}
 }

@@ -42,6 +42,15 @@ func (d Deps) generateSchedule(w http.ResponseWriter, r *http.Request) {
 	d.respond(w, http.StatusOK, view, err)
 }
 
+func (d Deps) discardSchedule(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	month, okMonth := pathMonth(w, r)
+	if !ok || !okMonth {
+		return
+	}
+	d.respond(w, http.StatusNoContent, nil, d.Store.DiscardDraft(r.Context(), id, month))
+}
+
 type assignmentRequest struct {
 	PersonID *int64 `json:"personId"`
 }
