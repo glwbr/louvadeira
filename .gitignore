@@ -1,0 +1,12 @@
+bin/
+data/
+web/node_modules/
+web/dist/
+server/internal/webui/dist/*
+!server/internal/webui/dist/.gitkeep
+mise.local.toml
+.env
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
