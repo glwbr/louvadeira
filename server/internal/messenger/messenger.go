@@ -2,6 +2,7 @@ package messenger
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"strings"
@@ -24,6 +25,32 @@ type Messenger interface {
 }
 
 var ErrNotAllowed = errors.New("destino fora da lista de permissão do modo de teste")
+
+/**
+ * NOTE: A Vote is a poll answer as it arrives: WhatsApp sends the SHA-256 of each chosen option, not its text.
+ * FromMe marks votes cast from the linked phone itself.
+ */
+type Vote struct {
+	PollID   MessageID
+	Selected [][]byte
+	FromMe   bool
+	Sender   string
+}
+
+func OptionHash(label string) []byte {
+	sum := sha256.Sum256([]byte(label))
+	return sum[:]
+}
+
+/**
+ * NOTE: Allows reports whether a messenger would deliver to the address; only the test-mode allowlist ever says no.
+ */
+func Allows(m Messenger, to Address) bool {
+	if gate, ok := m.(interface{ allows(Address) bool }); ok {
+		return gate.allows(to)
+	}
+	return m != nil
+}
 
 func (a Address) Normalize() Address {
 	raw := strings.TrimSpace(string(a))
@@ -76,8 +103,13 @@ func (g allowlisted) SendPoll(ctx context.Context, to Address, question string, 
 	return g.next.SendPoll(ctx, to, question, options)
 }
 
+func (g allowlisted) allows(to Address) bool {
+	_, ok := g.allowed[to.Normalize()]
+	return ok
+}
+
 func (g allowlisted) check(to Address) error {
-	if _, ok := g.allowed[to.Normalize()]; !ok {
+	if !g.allows(to) {
 		return fmt.Errorf("%w: %s", ErrNotAllowed, to)
 	}
 	return nil

@@ -75,3 +75,16 @@ func TestEmptyAllowlistBlocksEverything(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNotAllowed", err)
 	}
 }
+
+func TestAllowsFollowsTheAllowlist(t *testing.T) {
+	guarded := messenger.WithAllowlist(&recorder{}, []messenger.Address{"5511988887777"})
+	if !messenger.Allows(guarded, "+55 11 98888-7777") || messenger.Allows(guarded, "5511900001111") {
+		t.Fatal("Allows does not follow the allowlist")
+	}
+	if !messenger.Allows(&recorder{}, "5511900001111") {
+		t.Fatal("an unguarded messenger should allow everything")
+	}
+	if messenger.Allows(nil, "5511900001111") {
+		t.Fatal("a nil messenger delivers nothing")
+	}
+}

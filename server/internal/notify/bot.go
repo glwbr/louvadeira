@@ -1,0 +1,670 @@
+package notify
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"louvadeira/internal/messenger"
+	"louvadeira/internal/phone"
+	"louvadeira/internal/store"
+)
+
+const (
+	confirmAhead   = 7 * 24 * time.Hour
+	pendingAhead   = 3 * 24 * time.Hour
+	answerTime     = 24 * time.Hour
+	lateNotice     = 72 * time.Hour
+	firstHour      = 8
+	lastHour       = 21
+	reminderHour   = 10
+	pendingHour    = 9
+	optionConfirm  = "✅ Confirmo"
+	optionDecline  = "❌ Não posso"
+	optionNone     = "❌ Não posso em nenhum"
+	optionAccept   = "✅ Posso cobrir"
+	optionRefuse   = "❌ Não posso"
+	actionConfirm  = "confirm"
+	actionDecline  = "decline"
+	actionAccept   = "accept"
+	actionRefuse   = "refuse"
+	actionTestPoll = "test"
+)
+
+/**
+ * NOTE: Bot sends every WhatsApp message of the app and reacts to poll votes. Messenger may be nil (WhatsApp off):
+ * the bot then still records swaps but sends nothing.
+ */
+type Bot struct {
+	Store     *store.Store
+	Messenger messenger.Messenger
+	Log       *slog.Logger
+	Location  *time.Location
+	Now       func() time.Time
+	OwnPhone  func() string
+	// NOTE: Settle waits after a vote before acting, so someone changing their answer in a hurry only counts once.
+	Settle time.Duration
+
+	mu      sync.Mutex
+	pending map[messenger.MessageID]*time.Timer
+}
+
+func (b *Bot) now() time.Time {
+	t := time.Now()
+	if b.Now != nil {
+		t = b.Now()
+	}
+	if b.Location != nil {
+		t = t.In(b.Location)
+	}
+	return t
+}
+
+func (b *Bot) serviceTime(d store.AssignmentDetail) time.Time {
+	loc := b.Location
+	if loc == nil {
+		loc = time.UTC
+	}
+	t, _ := time.ParseInLocation("2006-01-02 15:04", d.Date+" "+d.StartTime, loc)
+	return t
+}
+
+func (b *Bot) send(ctx context.Context, to string, text string) bool {
+	if to == "" || b.Messenger == nil {
+		return false
+	}
+	if _, err := b.Messenger.SendText(ctx, messenger.Address(to), text); err != nil {
+		b.logSendError(to, err)
+		return false
+	}
+	return true
+}
+
+func (b *Bot) sendPoll(ctx context.Context, kind string, person store.Person, question string, options []store.PollOption) bool {
+	if person.Phone == "" || b.Messenger == nil {
+		return false
+	}
+	labels := make([]string, len(options))
+	for i, option := range options {
+		labels[i] = option.Label
+	}
+	id, err := b.Messenger.SendPoll(ctx, messenger.Address(person.Phone), question, labels)
+	if err != nil {
+		b.logSendError(person.Phone, err)
+		return false
+	}
+	if err := b.Store.SavePoll(ctx, store.Poll{MessageID: string(id), Kind: kind, PersonID: person.ID, Options: options}, b.now()); err != nil {
+		b.Log.Error("guardar enquete", "erro", err)
+	}
+	return true
+}
+
+func (b *Bot) logSendError(to string, err error) {
+	if errors.Is(err, messenger.ErrNotAllowed) {
+		b.Log.Info("envio bloqueado pelo modo de teste", "para", "…"+tail(to))
+		return
+	}
+	b.Log.Error("falha ao enviar mensagem", "para", "…"+tail(to), "erro", err)
+}
+
+func tail(phone string) string {
+	if len(phone) <= 4 {
+		return phone
+	}
+	return phone[len(phone)-4:]
+}
+
+func (b *Bot) allows(to string) bool {
+	return to != "" && messenger.Allows(b.Messenger, messenger.Address(to))
+}
+
+func (b *Bot) tellLeaders(ctx context.Context, ministryID int64, text string) {
+	leaders, err := b.Store.Leaders(ctx, ministryID)
+	if err != nil {
+		b.Log.Error("buscar líderes", "erro", err)
+		return
+	}
+	for _, leader := range leaders {
+		b.send(ctx, leader.Phone, text)
+	}
+}
+
+func (b *Bot) person(ctx context.Context, id int64) (store.Person, bool) {
+	p, err := b.Store.Person(ctx, id)
+	if err != nil {
+		return store.Person{}, false
+	}
+	return p, true
+}
+
+/**
+ * NOTE: Tick runs the scheduled messages. It only sends between 8h and 21h local time, and in test mode it skips
+ * people outside the allowlist without recording them, so they still get the message once the app goes live.
+ */
+func (b *Bot) Tick(ctx context.Context) {
+	now := b.now()
+	if now.Hour() < firstHour || now.Hour() >= lastHour {
+		return
+	}
+	today := now.Format("2006-01-02")
+	// NOTE: Reads two weeks so a week that only starts inside the 7-day window is asked about as a whole.
+	upcoming, err := b.Store.UpcomingAssignments(ctx, today, now.Add(2*confirmAhead).Format("2006-01-02"))
+	if err != nil {
+		b.Log.Error("buscar escalas", "erro", err)
+		return
+	}
+	var future []store.AssignmentDetail
+	for _, d := range upcoming {
+		if b.serviceTime(d).After(now) {
+			future = append(future, d)
+		}
+	}
+	b.sendConfirmations(ctx, future, now)
+	if now.Hour() >= reminderHour {
+		b.sendReminders(ctx, future, now.AddDate(0, 0, 1).Format("2006-01-02"))
+	}
+	if now.Hour() >= pendingHour {
+		b.alertPending(ctx, future, now)
+	}
+}
+
+type personGroup struct {
+	ministryID int64
+	personID   int64
+	key        string
+}
+
+func (b *Bot) sendConfirmations(ctx context.Context, upcoming []store.AssignmentDetail, now time.Time) {
+	groups := map[personGroup][]store.AssignmentDetail{}
+	var order []personGroup
+	for _, d := range upcoming {
+		k := personGroup{d.MinistryID, d.PersonID, store.GroupKey(d)}
+		if _, ok := groups[k]; !ok {
+			order = append(order, k)
+		}
+		groups[k] = append(groups[k], d)
+	}
+	for _, k := range order {
+		slots := groups[k]
+		pending := false
+		for _, d := range slots {
+			pending = pending || d.Status == store.AssignmentScheduled
+		}
+		if !pending || !b.allows(slots[0].Phone) || b.serviceTime(slots[0]).Sub(now) > confirmAhead {
+			continue
+		}
+		key := confirmKey(k.ministryID, k.personID, k.key)
+		if first, err := b.Store.MarkNotified(ctx, key, b.now()); err != nil || !first {
+			continue
+		}
+		if !b.askConfirmation(ctx, slots) {
+			_ = b.Store.UnmarkNotified(ctx, key)
+		}
+	}
+}
+
+func confirmKey(ministryID, personID int64, group string) string {
+	return fmt.Sprintf("confirm:%d:%d:%s", ministryID, personID, group)
+}
+
+type occurrence struct {
+	date        string
+	startTime   string
+	communion   bool
+	roles       []string
+	assignments []int64
+}
+
+func occurrencesOf(slots []store.AssignmentDetail) []occurrence {
+	var list []occurrence
+	for _, d := range slots {
+		if n := len(list); n > 0 && list[n-1].date == d.Date && list[n-1].startTime == d.StartTime {
+			list[n-1].roles = append(list[n-1].roles, d.RoleName)
+			list[n-1].assignments = append(list[n-1].assignments, d.AssignmentID)
+			continue
+		}
+		list = append(list, occurrence{date: d.Date, startTime: d.StartTime, communion: d.Communion, roles: []string{d.RoleName}, assignments: []int64{d.AssignmentID}})
+	}
+	return list
+}
+
+func (b *Bot) askConfirmation(ctx context.Context, slots []store.AssignmentDetail) bool {
+	first := slots[0]
+	occurrences := occurrencesOf(slots)
+	var lines []string
+	var all []int64
+	for _, o := range occurrences {
+		lines = append(lines, fmt.Sprintf("• %s %s, %s — %s%s", capitalize(weekday(o.date)), dayMonth(o.date), hour(o.startTime),
+			joinNames(o.roles), communionMark(o.communion)))
+		all = append(all, o.assignments...)
+	}
+	question := fmt.Sprintf("Paz, %s! Você está na escala do %s:\n%s\nConfirma?", firstName(first.PersonName), first.MinistryName, strings.Join(lines, "\n"))
+
+	options := []store.PollOption{{Label: optionConfirm, Action: actionConfirm, Assignments: all}}
+	if len(occurrences) == 1 {
+		options = append(options, store.PollOption{Label: optionDecline, Action: actionDecline, Assignments: all})
+	} else {
+		for _, o := range occurrences {
+			options = append(options, store.PollOption{
+				Label:       fmt.Sprintf("%s %s %s", optionDecline, weekday(o.date), dayMonth(o.date)),
+				Action:      actionDecline,
+				Assignments: o.assignments,
+			})
+		}
+		options = append(options, store.PollOption{Label: optionNone, Action: actionDecline, Assignments: all})
+	}
+	return b.sendPoll(ctx, store.PollConfirm, store.Person{ID: first.PersonID, Name: first.PersonName, Phone: first.Phone}, question, options)
+}
+
+func (b *Bot) sendReminders(ctx context.Context, upcoming []store.AssignmentDetail, tomorrow string) {
+	type key struct {
+		person  int64
+		service int64
+	}
+	byKey := map[key][]store.AssignmentDetail{}
+	var order []key
+	for _, d := range upcoming {
+		if d.Date != tomorrow || d.Status == store.AssignmentDeclined {
+			continue
+		}
+		k := key{d.PersonID, d.ServiceID}
+		if _, ok := byKey[k]; !ok {
+			order = append(order, k)
+		}
+		byKey[k] = append(byKey[k], d)
+	}
+	for _, k := range order {
+		slots := byKey[k]
+		d := slots[0]
+		if !b.allows(d.Phone) {
+			continue
+		}
+		mark := fmt.Sprintf("remind:%d:%s:%d", k.person, d.Date, k.service)
+		if first, err := b.Store.MarkNotified(ctx, mark, b.now()); err != nil || !first {
+			continue
+		}
+		roles := make([]string, len(slots))
+		for i, slot := range slots {
+			roles[i] = slot.RoleName
+		}
+		text := fmt.Sprintf("Lembrete 🎶 Amanhã (%s %s) tem culto às %s e você está na escala do %s: %s.",
+			weekday(d.Date), dayMonth(d.Date), hour(d.StartTime), d.MinistryName, joinNames(roles))
+		if d.Communion {
+			text += " É dia de Santa Ceia 🍷"
+		}
+		if !b.send(ctx, d.Phone, text) {
+			_ = b.Store.UnmarkNotified(ctx, mark)
+		}
+	}
+}
+
+func (b *Bot) alertPending(ctx context.Context, upcoming []store.AssignmentDetail, now time.Time) {
+	type key struct {
+		ministry int64
+		date     string
+		service  int64
+	}
+	pending := map[key][]string{}
+	sample := map[key]store.AssignmentDetail{}
+	var order []key
+	for _, d := range upcoming {
+		if d.Status != store.AssignmentScheduled || b.serviceTime(d).Sub(now) > pendingAhead {
+			continue
+		}
+		asked, ok := b.Store.NotifiedAt(ctx, confirmKey(d.MinistryID, d.PersonID, store.GroupKey(d)))
+		if !ok || now.Sub(asked) < answerTime {
+			continue
+		}
+		k := key{d.MinistryID, d.Date, d.ServiceID}
+		if _, ok := pending[k]; !ok {
+			order = append(order, k)
+			sample[k] = d
+		}
+		if !contains(pending[k], d.PersonName) {
+			pending[k] = append(pending[k], d.PersonName)
+		}
+	}
+	for _, k := range order {
+		mark := fmt.Sprintf("pending:%d:%s:%d", k.ministry, k.date, k.service)
+		if first, err := b.Store.MarkNotified(ctx, mark, b.now()); err != nil || !first {
+			continue
+		}
+		d := sample[k]
+		b.tellLeaders(ctx, k.ministry, fmt.Sprintf("⏳ Ainda não confirmaram para %s (%s): %s.", when(d), d.MinistryName, joinNames(pending[k])))
+	}
+}
+
+func contains(list []string, value string) bool {
+	for _, item := range list {
+		if item == value {
+			return true
+		}
+	}
+	return false
+}
+
+/**
+ * NOTE: HandleVote applies a poll answer. A vote cast from the linked phone only counts on polls addressed to the
+ * owner of that phone, so the leader browsing a member's chat cannot answer for them by accident.
+ */
+func (b *Bot) HandleVote(ctx context.Context, vote messenger.Vote) {
+	if b.Settle <= 0 {
+		b.applyVote(ctx, vote)
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.pending == nil {
+		b.pending = map[messenger.MessageID]*time.Timer{}
+	}
+	if timer, ok := b.pending[vote.PollID]; ok {
+		timer.Stop()
+	}
+	b.pending[vote.PollID] = time.AfterFunc(b.Settle, func() {
+		b.mu.Lock()
+		delete(b.pending, vote.PollID)
+		b.mu.Unlock()
+		b.applyVote(context.Background(), vote)
+	})
+}
+
+func (b *Bot) applyVote(ctx context.Context, vote messenger.Vote) {
+	poll, err := b.Store.Poll(ctx, string(vote.PollID))
+	if err != nil {
+		return
+	}
+	var chosen *store.PollOption
+	var labels []string
+	for i := range poll.Options {
+		for _, hash := range vote.Selected {
+			if bytes.Equal(hash, messenger.OptionHash(poll.Options[i].Label)) {
+				chosen = &poll.Options[i]
+				labels = append(labels, poll.Options[i].Label)
+			}
+		}
+	}
+	if poll.Kind == store.PollTest {
+		choice := strings.Join(labels, ", ")
+		if choice == "" {
+			choice = "(voto retirado)"
+		}
+		b.Log.Info("voto na enquete de teste", "quem", vote.Sender, "escolha", choice, "do próprio celular", vote.FromMe)
+		return
+	}
+	if chosen == nil {
+		return
+	}
+	person, ok := b.person(ctx, poll.PersonID)
+	if !ok {
+		return
+	}
+	if vote.FromMe && (b.OwnPhone == nil || phone.Canonical(b.OwnPhone()) != person.Phone) {
+		return
+	}
+	b.Log.Info("voto recebido", "enquete", poll.Kind, "pessoa", person.Name, "escolha", chosen.Label)
+
+	switch chosen.Action {
+	case actionConfirm:
+		b.confirm(ctx, person, chosen.Assignments)
+	case actionDecline:
+		for _, id := range chosen.Assignments {
+			d, err := b.Store.AssignmentDetail(ctx, id)
+			if err != nil || d.PersonID != person.ID || d.Status == store.AssignmentDeclined {
+				continue
+			}
+			if _, err := b.Decline(ctx, id, true); err != nil {
+				b.Log.Error("registrar ausência", "erro", err)
+			}
+		}
+	case actionAccept:
+		b.accept(ctx, chosen.Request, person)
+	case actionRefuse:
+		b.refuse(ctx, chosen.Request, person)
+	}
+}
+
+/**
+ * NOTE: Decline opens a swap for the slot: everyone who can cover gets an invitation at once and the first to accept
+ * takes the slot. Leaders always hear about it; under 72h it is flagged as a late notice.
+ */
+func (b *Bot) Decline(ctx context.Context, assignmentID int64, byMember bool) (store.CoverRequest, error) {
+	d, err := b.Store.AssignmentDetail(ctx, assignmentID)
+	if err != nil {
+		return store.CoverRequest{}, err
+	}
+	late := b.serviceTime(d).Sub(b.now()) < lateNotice
+	requestID, err := b.Store.OpenCoverRequest(ctx, assignmentID, late, b.now())
+	if err != nil {
+		return store.CoverRequest{}, err
+	}
+	candidates, err := b.Store.CoverCandidates(ctx, assignmentID)
+	if err != nil {
+		return store.CoverRequest{}, err
+	}
+
+	var invited, blocked []string
+	for _, candidate := range candidates {
+		question := fmt.Sprintf("Paz, %s! %s não poderá servir no %s em %s (%s). Você pode cobrir?",
+			firstName(candidate.Name), d.PersonName, d.MinistryName, when(d), d.RoleName)
+		options := []store.PollOption{
+			{Label: optionAccept, Action: actionAccept, Request: requestID},
+			{Label: optionRefuse, Action: actionRefuse, Request: requestID},
+		}
+		if !b.allows(candidate.Phone) {
+			blocked = append(blocked, candidate.Name)
+			continue
+		}
+		if !b.sendPoll(ctx, store.PollCover, candidate, question, options) {
+			continue
+		}
+		if err := b.Store.AddCoverInvite(ctx, requestID, candidate.ID); err != nil {
+			b.Log.Error("registrar convite", "erro", err)
+			continue
+		}
+		invited = append(invited, candidate.Name)
+	}
+	if len(invited) == 0 {
+		_ = b.Store.CloseCoverRequest(ctx, requestID, b.now())
+	}
+
+	alert := fmt.Sprintf("⚠️ %s não pode servir em %s (%s, %s).", d.PersonName, when(d), d.RoleName, d.MinistryName)
+	if late {
+		alert += " Aviso com menos de 72h."
+	}
+	if len(invited) > 0 {
+		alert += " Convidei para cobrir: " + joinNames(invited) + "."
+	} else {
+		alert += " Ninguém da equipe está livre para cobrir; a vaga precisa de você."
+	}
+	if len(blocked) > 0 {
+		alert += " (Modo de teste não deixou convidar: " + joinNames(blocked) + ".)"
+	}
+	b.tellLeaders(ctx, d.MinistryID, alert)
+
+	if byMember {
+		reply := fmt.Sprintf("Tudo bem, %s. Já avisei a liderança", firstName(d.PersonName))
+		if len(invited) > 0 {
+			reply += " e chamei " + joinNames(invited) + " para cobrir"
+		}
+		b.send(ctx, d.Phone, reply+". Obrigado por avisar!")
+	}
+
+	result, err := b.Store.CoverRequestResult(ctx, requestID)
+	return result.Request, err
+}
+
+func (b *Bot) confirm(ctx context.Context, person store.Person, assignments []int64) {
+	changed, err := b.Store.SetAssignmentsStatus(ctx, person.ID, assignments, store.AssignmentConfirmed, b.now())
+	if err != nil {
+		b.Log.Error("confirmar presença", "erro", err)
+		return
+	}
+	confirmed := len(changed) > 0
+	for _, id := range assignments {
+		if containsID(changed, id) {
+			continue
+		}
+		result, err := b.Store.WithdrawDecline(ctx, id, person.ID, b.now())
+		if errors.Is(err, store.ErrCoverClosed) {
+			if d, err := b.Store.AssignmentDetail(ctx, id); err == nil && d.PersonID != person.ID {
+				b.send(ctx, person.Phone, fmt.Sprintf("A vaga de %s (%s) já foi coberta por %s. Se quiser voltar, fale com a liderança.",
+					when(d), d.RoleName, d.PersonName))
+			}
+			continue
+		}
+		if err != nil {
+			b.Log.Error("voltar atrás na ausência", "erro", err)
+			continue
+		}
+		confirmed = true
+		d := result.Assignment
+		for _, waiting := range result.Waiting {
+			b.send(ctx, waiting.Phone, fmt.Sprintf("Não precisa mais cobrir %s (%s): %s vai servir. Obrigado!", when(d), d.RoleName, person.Name))
+		}
+		b.tellLeaders(ctx, d.MinistryID, fmt.Sprintf("↩️ %s voltou atrás e vai servir em %s (%s, %s).", person.Name, when(d), d.RoleName, d.MinistryName))
+	}
+	if confirmed {
+		b.send(ctx, person.Phone, fmt.Sprintf("Obrigado, %s! Presença confirmada 🙌", firstName(person.Name)))
+	}
+}
+
+func containsID(list []int64, id int64) bool {
+	for _, item := range list {
+		if item == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (b *Bot) accept(ctx context.Context, requestID int64, substitute store.Person) {
+	result, err := b.Store.AcceptCover(ctx, requestID, substitute.ID, b.now())
+	if errors.Is(err, store.ErrCoverClosed) {
+		b.send(ctx, substitute.Phone, "Obrigado! Essa vaga já foi resolvida 🙏")
+		return
+	}
+	if err != nil {
+		b.Log.Error("aceitar troca", "erro", err)
+		return
+	}
+	d := result.Assignment
+	b.send(ctx, substitute.Phone, fmt.Sprintf("Valeu, %s! 🙏 Você está na escala de %s — %s.", firstName(substitute.Name), when(d), d.RoleName))
+	b.send(ctx, result.Absent.Phone, fmt.Sprintf("%s vai cobrir você em %s (%s). Obrigado por avisar!", substitute.Name, when(d), d.RoleName))
+	for _, waiting := range result.Waiting {
+		b.send(ctx, waiting.Phone, fmt.Sprintf("A vaga de %s (%s) já foi coberta por %s. Obrigado!", when(d), d.RoleName, substitute.Name))
+	}
+	swap := fmt.Sprintf("🔄 Troca no %s: %s cobre %s em %s (%s).", d.MinistryName, substitute.Name, result.Absent.Name, when(d), d.RoleName)
+	b.tellLeaders(ctx, d.MinistryID, swap)
+	if d.WhatsAppGroup != "" {
+		b.send(ctx, d.WhatsAppGroup, swap)
+	}
+}
+
+func (b *Bot) refuse(ctx context.Context, requestID int64, person store.Person) {
+	everyone, err := b.Store.RefuseCover(ctx, requestID, person.ID, b.now())
+	if errors.Is(err, store.ErrCoverClosed) {
+		return
+	}
+	if err != nil {
+		b.Log.Error("recusar troca", "erro", err)
+		return
+	}
+	b.send(ctx, person.Phone, "Tudo bem, obrigado por responder!")
+	if !everyone {
+		return
+	}
+	_ = b.Store.CloseCoverRequest(ctx, requestID, b.now())
+	result, err := b.Store.CoverRequestResult(ctx, requestID)
+	if err != nil {
+		return
+	}
+	d := result.Assignment
+	b.tellLeaders(ctx, d.MinistryID, fmt.Sprintf("❗ Ninguém pôde cobrir %s em %s (%s, %s). A vaga precisa de você.",
+		result.Absent.Name, when(d), d.RoleName, d.MinistryName))
+}
+
+/**
+ * NOTE: Posts the published month to the ministry group in the format the team already uses: one line per service
+ * with the people in rotation (fixed members are implied), a 🍷 on Lord's Supper days and the missing roles.
+ */
+func (b *Bot) AnnouncePublished(ctx context.Context, ministryID int64, month string) {
+	ministry, err := b.Store.Ministry(ctx, ministryID)
+	if err != nil || ministry.WhatsAppGroup == "" {
+		return
+	}
+	view, err := b.Store.ScheduleView(ctx, ministryID, month)
+	if err != nil {
+		b.Log.Error("ler escala para anunciar", "erro", err)
+		return
+	}
+	b.send(ctx, ministry.WhatsAppGroup, Summary(ministry, view))
+}
+
+func Summary(ministry store.MinistryDetail, view store.ScheduleView) string {
+	fixed := map[int64]map[int64]bool{}
+	for _, m := range ministry.Members {
+		fixed[m.PersonID] = map[int64]bool{}
+		for _, r := range m.Roles {
+			fixed[m.PersonID][r.RoleID] = r.Fixed
+		}
+	}
+	var out strings.Builder
+	fmt.Fprintf(&out, "Paz, pessoal! 🎶 Escala do *%s* de %s:\n", ministry.Name, monthName(view.Month))
+	for _, week := range view.Weeks {
+		if len(week.Services) == 0 {
+			continue
+		}
+		fmt.Fprintf(&out, "\n*Semana de %s*\n\n", fullDate(week.Services[0].Date))
+		for _, sv := range week.Services {
+			var names, missing []string
+			for _, role := range sv.Roles {
+				for _, slot := range role.Slots {
+					switch {
+					case slot.PersonID == 0:
+						missing = append(missing, role.Name)
+					case !fixed[slot.PersonID][role.RoleID] && !contains(names, slot.PersonName):
+						names = append(names, slot.PersonName)
+					}
+				}
+			}
+			line := fmt.Sprintf("• %s (%s) — %s", capitalize(weekday(sv.Date)), fullDate(sv.Date), joinNames(names))
+			if len(missing) > 0 {
+				sort.Strings(missing)
+				line += " ⚠️ falta " + joinNames(missing)
+			}
+			out.WriteString(line + communionMark(sv.Communion) + "\n")
+		}
+	}
+	return strings.TrimRight(out.String(), "\n")
+}
+
+/**
+ * NOTE: A poll to check the WhatsApp connection end to end; its votes only show up in the log.
+ */
+func (b *Bot) SendTestPoll(ctx context.Context, to messenger.Address) (messenger.MessageID, error) {
+	if b.Messenger == nil {
+		return "", errors.New("WhatsApp desligado")
+	}
+	options := []store.PollOption{
+		{Label: optionConfirm, Action: actionTestPoll},
+		{Label: optionDecline + " quinta", Action: actionTestPoll},
+		{Label: optionDecline + " domingo", Action: actionTestPoll},
+		{Label: optionNone, Action: actionTestPoll},
+	}
+	labels := make([]string, len(options))
+	for i, option := range options {
+		labels[i] = option.Label
+	}
+	question := "Teste da louvadeira 🎶 Imagine que esta é a confirmação da escala da semana. Vote, depois mude o voto e depois retire o voto."
+	id, err := b.Messenger.SendPoll(ctx, to, question, labels)
+	if err != nil {
+		return "", err
+	}
+	return id, b.Store.SavePoll(ctx, store.Poll{MessageID: string(id), Kind: store.PollTest, Options: options}, b.now())
+}
