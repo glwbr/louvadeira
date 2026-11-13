@@ -22,6 +22,7 @@ type Config struct {
 	WhatsAppAllowlist []string
 	AdminToken        string
 	PublicURL         string
+	Timezone          string
 }
 
 /**
@@ -36,6 +37,7 @@ func Load() (Config, error) {
 		WhatsAppAllowlist: splitList(os.Getenv("LOUVADEIRA_WHATSAPP_ALLOWLIST")),
 		AdminToken:        os.Getenv("LOUVADEIRA_ADMIN_TOKEN"),
 		PublicURL:         strings.TrimRight(envOr("LOUVADEIRA_PUBLIC_URL", "http://localhost:8090"), "/"),
+		Timezone:          envOr("LOUVADEIRA_TIMEZONE", "America/Sao_Paulo"),
 	}
 	switch cfg.WhatsAppMode {
 	case WhatsAppOff, WhatsAppTest, WhatsAppLive:

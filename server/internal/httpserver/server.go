@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"louvadeira/internal/messenger"
+	"louvadeira/internal/notify"
 	"louvadeira/internal/store"
 	"louvadeira/internal/whatsapp"
 )
@@ -22,6 +23,7 @@ type WhatsApp interface {
 	Status() whatsapp.Status
 	Groups(ctx context.Context) ([]whatsapp.Group, error)
 	GroupParticipants(ctx context.Context, groupID messenger.Address) ([]whatsapp.Participant, error)
+	SendButtonTests(ctx context.Context, to messenger.Address) ([]whatsapp.ButtonTestResult, error)
 }
 
 type Deps struct {
@@ -32,6 +34,7 @@ type Deps struct {
 	WhatsAppMode string
 	WhatsApp     WhatsApp
 	Messenger    messenger.Messenger
+	Bot          *notify.Bot
 	AdminToken   string
 }
 
@@ -87,6 +90,8 @@ func New(d Deps) http.Handler {
 	admin("POST /api/ministries/{id}/schedules/{month}/generate", d.generateSchedule)
 	admin("POST /api/ministries/{id}/schedules/{month}/publish", d.publishSchedule)
 	admin("PUT /api/ministries/{id}/schedules/{month}/assignments/{assignmentId}", d.setAssignment)
+	admin("POST /api/ministries/{id}/schedules/{month}/assignments/{assignmentId}/decline", d.declineAssignment)
+	admin("GET /api/ministries/{id}/schedules/{month}/covers", d.listCovers)
 
 	admin("GET /api/unavailabilities", d.listUnavailabilities)
 	admin("POST /api/unavailabilities", d.createUnavailability)
@@ -95,6 +100,7 @@ func New(d Deps) http.Handler {
 	admin("GET /api/admin/whatsapp/groups", d.groups)
 	admin("GET /api/admin/whatsapp/groups/{group}/participants", d.groupParticipants)
 	admin("POST /api/admin/whatsapp/test-poll", d.testPoll)
+	admin("POST /api/admin/whatsapp/test-buttons", d.testButtons)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "rota não encontrada")
 	})
@@ -143,10 +149,6 @@ type testPollRequest struct {
 }
 
 func (d Deps) testPoll(w http.ResponseWriter, r *http.Request) {
-	if d.Messenger == nil {
-		writeError(w, http.StatusServiceUnavailable, "WhatsApp desligado")
-		return
-	}
 	var req testPollRequest
 	if !decodeJSON(w, r, &req) {
 		return
@@ -155,7 +157,11 @@ func (d Deps) testPoll(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, `envie {"to": "<grupo ou número>"}`)
 		return
 	}
-	id, err := d.Messenger.SendPoll(r.Context(), req.To, "Teste da louvadeira: chegou?", []string{"✅ Chegou", "❌ Não chegou"})
+	if d.Bot == nil {
+		writeError(w, http.StatusServiceUnavailable, "WhatsApp desligado")
+		return
+	}
+	id, err := d.Bot.SendTestPoll(r.Context(), req.To)
 	if errors.Is(err, messenger.ErrNotAllowed) {
 		writeError(w, http.StatusForbidden, err.Error())
 		return
@@ -166,6 +172,28 @@ func (d Deps) testPoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]messenger.MessageID{"id": id})
+}
+
+func (d Deps) testButtons(w http.ResponseWriter, r *http.Request) {
+	var req testPollRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if d.WhatsApp == nil || !d.WhatsApp.Status().Connected {
+		writeError(w, http.StatusServiceUnavailable, "WhatsApp desconectado")
+		return
+	}
+	if !messenger.Allows(d.Messenger, req.To) {
+		writeError(w, http.StatusForbidden, messenger.ErrNotAllowed.Error())
+		return
+	}
+	results, err := d.WhatsApp.SendButtonTests(r.Context(), req.To)
+	if err != nil {
+		d.Log.Error("enviar teste de botões", "erro", err)
+		writeError(w, http.StatusBadGateway, "não consegui enviar o teste")
+		return
+	}
+	writeJSON(w, http.StatusOK, results)
 }
 
 /**

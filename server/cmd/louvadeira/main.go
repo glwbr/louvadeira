@@ -11,10 +11,12 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata"
 
 	"louvadeira/internal/config"
 	"louvadeira/internal/httpserver"
 	"louvadeira/internal/messenger"
+	"louvadeira/internal/notify"
 	"louvadeira/internal/storage"
 	"louvadeira/internal/store"
 	"louvadeira/internal/webui"
@@ -68,10 +70,17 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return err
 	}
 
+	location, err := time.LoadLocation(cfg.Timezone)
+	if err != nil {
+		return fmt.Errorf("fuso horário %q: %w", cfg.Timezone, err)
+	}
+	registry := store.New(db)
+	bot := &notify.Bot{Store: registry, Log: log, Location: location, Settle: 20 * time.Second}
 	deps := httpserver.Deps{
 		Log:          log,
 		UI:           webui.FS(),
-		Store:        store.New(db),
+		Store:        registry,
+		Bot:          bot,
 		WhatsAppMode: string(cfg.WhatsAppMode),
 		AdminToken:   cfg.AdminToken,
 	}
@@ -81,12 +90,16 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 			return err
 		}
 		defer wa.Close()
-		go keepConnecting(ctx, wa, log)
 		deps.WhatsApp = wa
 		deps.Messenger = wa
 		if cfg.WhatsAppMode == config.WhatsAppTest {
 			deps.Messenger = messenger.WithAllowlist(wa, addresses(cfg.WhatsAppAllowlist))
 		}
+		bot.Messenger = deps.Messenger
+		bot.OwnPhone = wa.OwnPhone
+		wa.OnVote(bot.HandleVote)
+		go keepConnecting(ctx, wa, log)
+		go runScheduler(ctx, bot, wa)
 	}
 
 	server := &http.Server{Addr: cfg.Addr, Handler: httpserver.New(deps), ReadHeaderTimeout: 10 * time.Second}
@@ -119,6 +132,26 @@ func keepConnecting(ctx context.Context, wa *whatsapp.Client, log *slog.Logger) 
 		case <-ctx.Done():
 			return
 		case <-time.After(30 * time.Second):
+		}
+	}
+}
+
+/**
+ * NOTE: Checks for due messages every five minutes while WhatsApp is connected; the bot itself keeps quiet hours and
+ * remembers what it already sent.
+ */
+func runScheduler(ctx context.Context, bot *notify.Bot, wa *whatsapp.Client) {
+	timer := time.NewTimer(30 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			if wa.Status().Connected {
+				bot.Tick(ctx)
+			}
+			timer.Reset(5 * time.Minute)
 		}
 	}
 }

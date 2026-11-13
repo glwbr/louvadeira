@@ -1,8 +1,10 @@
 package httpserver
 
 import (
+	"context"
 	"net/http"
 	"regexp"
+	"time"
 
 	"louvadeira/internal/store"
 )
@@ -72,7 +74,47 @@ func (d Deps) publishSchedule(w http.ResponseWriter, r *http.Request) {
 	if !ok || !okMonth {
 		return
 	}
-	d.respond(w, http.StatusNoContent, nil, d.Store.PublishSchedule(r.Context(), id, month, d.now()))
+	if err := d.Store.PublishSchedule(r.Context(), id, month, d.now()); err != nil {
+		d.fail(w, err)
+		return
+	}
+	if d.Bot != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			d.Bot.AnnouncePublished(ctx, id, month)
+		}()
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (d Deps) declineAssignment(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	month, okMonth := pathMonth(w, r)
+	assignmentID, okAssignment := pathID(w, r, "assignmentId")
+	if !ok || !okMonth || !okAssignment {
+		return
+	}
+	if d.Bot == nil {
+		writeError(w, http.StatusServiceUnavailable, "trocas indisponíveis")
+		return
+	}
+	if err := d.Store.CheckAssignment(r.Context(), id, month, assignmentID); err != nil {
+		d.fail(w, err)
+		return
+	}
+	request, err := d.Bot.Decline(r.Context(), assignmentID, false)
+	d.respond(w, http.StatusOK, request, err)
+}
+
+func (d Deps) listCovers(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	month, okMonth := pathMonth(w, r)
+	if !ok || !okMonth {
+		return
+	}
+	covers, err := d.Store.CoverRequestsForSchedule(r.Context(), id, month)
+	d.respond(w, http.StatusOK, covers, err)
 }
 
 type reorderRolesRequest struct {

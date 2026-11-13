@@ -16,6 +16,7 @@ import (
 
 	"louvadeira/internal/httpserver"
 	"louvadeira/internal/messenger"
+	"louvadeira/internal/notify"
 	"louvadeira/internal/storage"
 	"louvadeira/internal/store"
 	"louvadeira/internal/whatsapp"
@@ -27,6 +28,10 @@ func (f fakeWhatsApp) Status() whatsapp.Status { return f.status }
 
 func (f fakeWhatsApp) Groups(context.Context) ([]whatsapp.Group, error) {
 	return []whatsapp.Group{{ID: "1@g.us", Name: "Teste"}}, nil
+}
+
+func (f fakeWhatsApp) SendButtonTests(context.Context, messenger.Address) ([]whatsapp.ButtonTestResult, error) {
+	return []whatsapp.ButtonTestResult{{Kind: "lista", Sent: true}}, nil
 }
 
 func (f fakeWhatsApp) GroupParticipants(context.Context, messenger.Address) ([]whatsapp.Participant, error) {
@@ -72,14 +77,16 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 	h := &harness{t: t, store: store.New(db), polls: &fakeMessenger{}}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	h.handler = httpserver.New(httpserver.Deps{
-		Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Log:          logger,
 		UI:           ui,
 		Store:        h.store,
 		Now:          func() time.Time { return now },
 		WhatsAppMode: "test",
 		WhatsApp:     fakeWhatsApp{status: whatsapp.Status{Linked: true, Connected: true}},
 		Messenger:    h.polls,
+		Bot:          &notify.Bot{Store: h.store, Messenger: h.polls, Log: logger, Now: func() time.Time { return now }},
 		AdminToken:   "segredo",
 	})
 	return h
@@ -380,5 +387,38 @@ func TestGroupParticipantsRequireAnAdministrator(t *testing.T) {
 	rec := h.do(http.MethodGet, "/api/admin/whatsapp/groups/1@g.us/participants", "")
 	if rec.Code != http.StatusOK || decode[[]whatsapp.Participant](t, rec)[0].Phone != "5511988887777" {
 		t.Fatalf("participants: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestDeclineFromTheAppOpensASwap(t *testing.T) {
+	h := newHarness(t)
+	h.signInAdmin()
+	ctx := context.Background()
+	ministry, _ := h.store.CreateMinistry(ctx, store.MinistryInput{Name: "Louvor"})
+	role, _ := h.store.CreateRole(ctx, ministry.ID, store.RoleInput{Name: "Baixo", Slots: 1})
+	service, _ := h.store.CreateService(ctx, store.ServiceInput{Name: "Quinta", Weekday: 4, StartTime: "19:30"})
+	_ = h.store.SetMinistryServices(ctx, ministry.ID, []int64{service.ID})
+	for _, name := range []string{"Edu", "Fred"} {
+		p, _ := h.store.CreatePerson(ctx, store.PersonInput{Name: name, Phone: "+55 11 9" + map[string]string{"Edu": "1111-1111", "Fred": "2222-2222"}[name]})
+		_ = h.store.PutMember(ctx, ministry.ID, p.ID, store.MemberInput{Roles: []store.MemberRole{{RoleID: role.ID}}})
+	}
+	base := fmt.Sprintf("/api/ministries/%d/schedules/2026-12", ministry.ID)
+	view := decode[store.ScheduleView](t, h.do(http.MethodPost, base+"/generate", ""))
+	slot := view.Weeks[0].Services[0].Roles[0].Slots[0]
+
+	if rec := h.do(http.MethodPost, fmt.Sprintf("%s/assignments/%d/decline", base, slot.AssignmentID), ""); rec.Code != http.StatusBadRequest {
+		t.Fatalf("decline on a draft: %d %s", rec.Code, rec.Body)
+	}
+	h.do(http.MethodPost, base+"/publish", "")
+	rec := h.do(http.MethodPost, fmt.Sprintf("%s/assignments/%d/decline", base, slot.AssignmentID), "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("decline: %d %s", rec.Code, rec.Body)
+	}
+	covers := decode[[]store.CoverRequest](t, h.do(http.MethodGet, base+"/covers", ""))
+	if len(covers) != 1 || covers[0].AbsentName != slot.PersonName || len(covers[0].Invites) != 1 || covers[0].Status != store.CoverOpen {
+		t.Fatalf("covers = %+v", covers)
+	}
+	if len(h.polls.polls) != 1 {
+		t.Fatalf("invites sent = %v", h.polls.polls)
 	}
 }
