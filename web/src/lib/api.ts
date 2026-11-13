@@ -25,6 +25,7 @@ export type Service = {
   weekday: number
   startTime: string
   active: boolean
+  communionWeek: number | null
 }
 
 export type ServiceInput = Omit<Service, "id">
@@ -95,6 +96,7 @@ export type ScheduleService = {
   date: string
   name: string
   startTime: string
+  communion: boolean
   roles: ScheduleRole[]
 }
 
@@ -114,13 +116,15 @@ export type ScheduleView = {
   weeks: ScheduleWeek[]
 }
 
+export type Reason = "viagem" | "trabalho" | "saude" | "familia" | "estudos" | "outro"
+
 export type Unavailability = {
   id: number
   personId: number
   personName: string
   startDate: string
   endDate: string
-  note: string
+  reason: Reason
 }
 
 export type UnavailabilityInput = Omit<Unavailability, "id" | "personName">
@@ -193,6 +197,8 @@ export const api = {
       request<ScheduleView>("GET", `/ministries/${ministryId}/schedules/${month}`),
     generate: (ministryId: number, month: string) =>
       request<ScheduleView>("POST", `/ministries/${ministryId}/schedules/${month}/generate`),
+    discard: (ministryId: number, month: string) =>
+      request<void>("DELETE", `/ministries/${ministryId}/schedules/${month}`),
     publish: (ministryId: number, month: string) =>
       request<void>("POST", `/ministries/${ministryId}/schedules/${month}/publish`),
     assign: (ministryId: number, month: string, assignmentId: number, personId: number | null) =>

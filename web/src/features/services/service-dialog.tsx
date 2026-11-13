@@ -32,10 +32,17 @@ function ServiceForm({ service, onDone }: { service?: Service; onDone: () => voi
   const [weekday, setWeekday] = useState(String(service?.weekday ?? 0))
   const [startTime, setStartTime] = useState(service?.startTime ?? "19:00")
   const [active, setActive] = useState(service?.active ?? true)
+  const [communionWeek, setCommunionWeek] = useState(String(service?.communionWeek ?? "none"))
 
   const save = useMutation({
     mutationFn: () => {
-      const input = { name, weekday: Number(weekday), startTime, active }
+      const input = {
+        name,
+        weekday: Number(weekday),
+        startTime,
+        active,
+        communionWeek: communionWeek === "none" ? null : Number(communionWeek),
+      }
       return service ? api.services.update(service.id, input) : api.services.create(input)
     },
     onSuccess: () => {
@@ -88,6 +95,22 @@ function ServiceForm({ service, onDone }: { service?: Service; onDone: () => voi
           <Label htmlFor="service-time">Horário</Label>
           <Input id="service-time" type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} required />
         </div>
+      </div>
+      <div className="grid gap-2">
+        <Label>Santa Ceia</Label>
+        <Select value={communionWeek} onValueChange={setCommunionWeek}>
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Não tem Santa Ceia neste culto</SelectItem>
+            {[1, 2, 3, 4].map((n) => (
+              <SelectItem key={n} value={String(n)}>
+                {n}º {WEEKDAYS[Number(weekday)].toLowerCase()} do mês
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       {service && (
         <label className="flex items-center justify-between gap-3 rounded-lg border p-3">

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { CalendarDays, CalendarOff, ChevronLeft, ChevronRight, Church, Plus, RefreshCw, Send, Sparkles, X } from "lucide-react"
+import { CalendarDays, CalendarOff, ChevronLeft, ChevronRight, Church, Plus, RefreshCw, Send, Sparkles, Trash2, X } from "lucide-react"
 import { useState } from "react"
 import { Link, useSearchParams } from "react-router"
 import { toast } from "sonner"
@@ -13,7 +13,17 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ApiError, api, queryKeys, type ScheduleSlot, type ScheduleView, type Unavailability } from "@/lib/api"
 import { toastError } from "@/lib/errors"
-import { formatDateRange, formatDay, monthBounds, monthLabel, nextMonth, shiftMonth, weekRange, weekdayOf } from "@/lib/format"
+import {
+  REASON_LABEL,
+  formatDateRange,
+  formatDay,
+  monthBounds,
+  monthLabel,
+  nextMonth,
+  shiftMonth,
+  weekRange,
+  weekdayOf,
+} from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { SlotDialog, type SlotSelection } from "./slot-dialog"
 import { UnavailabilityDialog } from "./unavailability-dialog"
@@ -103,6 +113,15 @@ function ScheduleBoard({ ministryId, month }: { ministryId: number; month: strin
     },
     onError: toastError,
   })
+  const discard = useMutation({
+    mutationFn: () => api.schedules.discard(ministryId, month),
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: queryKeys.schedule(ministryId, month) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.schedule(ministryId, month) })
+      toast.success("Rascunho descartado")
+    },
+    onError: toastError,
+  })
   const publish = useMutation({
     mutationFn: () => api.schedules.publish(ministryId, month),
     onSuccess: () => {
@@ -145,7 +164,15 @@ function ScheduleBoard({ ministryId, month }: { ministryId: number; month: strin
               </Badge>
             )}
             {schedule.data.status === "draft" && (
-              <div className="ml-auto flex gap-2">
+              <div className="ml-auto flex flex-wrap justify-end gap-2">
+                <ConfirmButton
+                  icon={<Trash2 />}
+                  label="Descartar"
+                  title="Descartar o rascunho?"
+                  description="A escala deste mês volta a não existir. Dá para gerar de novo depois."
+                  onConfirm={() => discard.mutate()}
+                  pending={discard.isPending}
+                />
                 <ConfirmButton
                   tone="outline"
                   icon={<RefreshCw />}
@@ -181,6 +208,11 @@ function ScheduleBoard({ ministryId, month }: { ministryId: number; month: strin
                       {" "}
                       · {service.startTime.replace(":", "h")} · {service.name}
                     </span>
+                    {service.communion && (
+                      <Badge variant="outline" className="ml-2 align-middle">
+                        🍷 Santa Ceia
+                      </Badge>
+                    )}
                   </p>
                   <dl className="mt-2 grid gap-1.5">
                     {service.roles.map((role) => (
@@ -272,8 +304,7 @@ function UnavailabilityCard({ list, defaultDate }: { list: Unavailability[]; def
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{u.personName}</p>
                 <p className="text-xs text-muted-foreground">
-                  {formatDateRange(u.startDate, u.endDate)}
-                  {u.note && ` · ${u.note}`}
+                  {formatDateRange(u.startDate, u.endDate)} · {REASON_LABEL[u.reason]}
                 </p>
               </div>
               <Button

@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/page-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { api, queryKeys, type Service } from "@/lib/api"
-import { serviceLabel } from "@/lib/format"
+import { communionLabel, serviceLabel } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { ServiceDialog } from "./service-dialog"
 
@@ -59,6 +59,9 @@ export function ServicesPage() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{service.name}</p>
                   <p className="text-sm text-muted-foreground">{serviceLabel(service)}</p>
+                  {communionLabel(service) && (
+                    <p className="text-xs text-muted-foreground">🍷 {communionLabel(service)}</p>
+                  )}
                 </div>
                 {!service.active && <Badge variant="secondary">Inativo</Badge>}
               </button>

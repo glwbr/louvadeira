@@ -1,4 +1,4 @@
-import type { RotationUnit, Service } from "@/lib/api"
+import type { Reason, RotationUnit, Service } from "@/lib/api"
 
 export const WEEKDAYS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"] as const
 
@@ -68,4 +68,20 @@ export function monthBounds(month: string): { from: string; to: string } {
 
 export function formatDateRange(start: string, end: string): string {
   return start === end ? formatDay(start) : `${formatDay(start)} a ${formatDay(end)}`
+}
+
+export const REASON_LABEL: Record<Reason, string> = {
+  viagem: "Viagem",
+  trabalho: "Trabalho",
+  saude: "Saúde",
+  familia: "Família",
+  estudos: "Estudos",
+  outro: "Outro",
+}
+
+export function communionLabel(service: Pick<Service, "weekday" | "communionWeek">): string | null {
+  if (!service.communionWeek) {
+    return null
+  }
+  return `Santa Ceia no ${service.communionWeek}º ${WEEKDAYS[service.weekday].toLowerCase()} do mês`
 }

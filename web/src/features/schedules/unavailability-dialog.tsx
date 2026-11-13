@@ -7,8 +7,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { api, queryKeys } from "@/lib/api"
+import { api, queryKeys, type Reason } from "@/lib/api"
 import { toastError } from "@/lib/errors"
+import { REASON_LABEL } from "@/lib/format"
 
 type Props = {
   open: boolean
@@ -32,10 +33,10 @@ function UnavailabilityForm({ defaultDate, onDone }: { defaultDate: string; onDo
   const [personId, setPersonId] = useState("")
   const [startDate, setStartDate] = useState(defaultDate)
   const [endDate, setEndDate] = useState(defaultDate)
-  const [note, setNote] = useState("")
+  const [reason, setReason] = useState<Reason | "">("")
 
   const save = useMutation({
-    mutationFn: () => api.unavailabilities.create({ personId: Number(personId), startDate, endDate, note }),
+    mutationFn: () => api.unavailabilities.create({ personId: Number(personId), startDate, endDate, reason: reason as Reason }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["unavailabilities"] })
       queryClient.invalidateQueries({ queryKey: ["schedules"] })
@@ -98,11 +99,22 @@ function UnavailabilityForm({ defaultDate, onDone }: { defaultDate: string; onDo
         </div>
       </div>
       <div className="grid gap-2">
-        <Label htmlFor="unavailable-note">Motivo (opcional)</Label>
-        <Input id="unavailable-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Viagem" />
+        <Label>Motivo</Label>
+        <Select value={reason} onValueChange={(value) => setReason(value as Reason)}>
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Escolha o motivo" />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(REASON_LABEL).map(([value, label]) => (
+              <SelectItem key={value} value={value}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <DialogFooter>
-        <Button type="submit" disabled={save.isPending || !personId}>
+        <Button type="submit" disabled={save.isPending || !personId || !reason}>
           {save.isPending ? "Salvando…" : "Salvar"}
         </Button>
       </DialogFooter>
