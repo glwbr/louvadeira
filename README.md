@@ -51,7 +51,7 @@ No servidor, `~/louvadeira/lv` roda o binário já com a configuração de `louv
 ~/louvadeira/lv admin add -name "Nome" -phone "(11) 98888-7777"   # primeiro administrador
 ~/louvadeira/lv admin link -phone "(11) 98888-7777"               # link de acesso de 15 minutos
 systemctl --user status louvadeira                                # estado
-journalctl --user -u louvadeira -f                                # logs
+journalctl _SYSTEMD_USER_UNIT=louvadeira.service -f              # logs
 cat ~/louvadeira/louvadeira.env                                   # configuração e token de administrador
 ```
 
@@ -82,7 +82,7 @@ conversas, não baixa o histórico, não marca nada como lido e não aparece com
    ```sh
    curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
      -d '{"to": "<id do grupo>"}' http://127.0.0.1:8090/api/admin/whatsapp/test-poll
-   journalctl --user -u louvadeira -f
+   journalctl _SYSTEMD_USER_UNIT=louvadeira.service -f
    ```
 
 Para desvincular: `~/louvadeira/lv whatsapp logout`, ou remover o aparelho "louvadeira" em
