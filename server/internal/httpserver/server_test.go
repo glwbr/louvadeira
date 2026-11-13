@@ -1,0 +1,304 @@
+package httpserver_test
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"testing"
+	"testing/fstest"
+	"time"
+
+	"louvadeira/internal/httpserver"
+	"louvadeira/internal/messenger"
+	"louvadeira/internal/storage"
+	"louvadeira/internal/store"
+	"louvadeira/internal/whatsapp"
+)
+
+type fakeWhatsApp struct{ status whatsapp.Status }
+
+func (f fakeWhatsApp) Status() whatsapp.Status { return f.status }
+
+func (f fakeWhatsApp) Groups(context.Context) ([]whatsapp.Group, error) {
+	return []whatsapp.Group{{ID: "1@g.us", Name: "Teste"}}, nil
+}
+
+type fakeMessenger struct{ polls []messenger.Address }
+
+func (f *fakeMessenger) SendText(context.Context, messenger.Address, string) (messenger.MessageID, error) {
+	return "", nil
+}
+
+func (f *fakeMessenger) SendPoll(_ context.Context, to messenger.Address, _ string, _ []string) (messenger.MessageID, error) {
+	f.polls = append(f.polls, to)
+	return "poll-1", nil
+}
+
+var ui = fstest.MapFS{
+	"index.html":           {Data: []byte("<html>app</html>")},
+	"assets/app-1.js":      {Data: []byte("console.log(1)")},
+	"manifest.webmanifest": {Data: []byte("{}")},
+}
+
+var now = time.Date(2026, 11, 13, 20, 0, 0, 0, time.UTC)
+
+type harness struct {
+	t       *testing.T
+	handler http.Handler
+	store   *store.Store
+	polls   *fakeMessenger
+	cookie  string
+}
+
+func newHarness(t *testing.T) *harness {
+	t.Helper()
+	ctx := context.Background()
+	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "app.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := storage.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	h := &harness{t: t, store: store.New(db), polls: &fakeMessenger{}}
+	h.handler = httpserver.New(httpserver.Deps{
+		Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+		UI:           ui,
+		Store:        h.store,
+		Now:          func() time.Time { return now },
+		WhatsAppMode: "test",
+		WhatsApp:     fakeWhatsApp{status: whatsapp.Status{Linked: true, Connected: true}},
+		Messenger:    h.polls,
+		AdminToken:   "segredo",
+	})
+	return h
+}
+
+func (h *harness) do(method, path, body string, headers ...string) *httptest.ResponseRecorder {
+	h.t.Helper()
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	for i := 0; i+1 < len(headers); i += 2 {
+		req.Header.Set(headers[i], headers[i+1])
+	}
+	if h.cookie != "" {
+		req.Header.Set("Cookie", h.cookie)
+	}
+	rec := httptest.NewRecorder()
+	h.handler.ServeHTTP(rec, req)
+	return rec
+}
+
+func (h *harness) signIn(person store.Person) {
+	h.t.Helper()
+	token, err := h.store.CreateLoginToken(context.Background(), person.ID, now, 15*time.Minute)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	rec := h.do(http.MethodPost, "/api/auth/redeem", fmt.Sprintf(`{"token":%q}`, token))
+	if rec.Code != http.StatusOK {
+		h.t.Fatalf("redeem: %d %s", rec.Code, rec.Body)
+	}
+	cookie := rec.Result().Cookies()[0]
+	if !cookie.HttpOnly || cookie.SameSite != http.SameSiteLaxMode {
+		h.t.Fatalf("cookie flags = %+v", cookie)
+	}
+	h.cookie = cookie.Name + "=" + cookie.Value
+}
+
+func (h *harness) signInAdmin() store.Person {
+	h.t.Helper()
+	admin, err := h.store.EnsureAdmin(context.Background(), store.PersonInput{Name: "Admin", Phone: "11988887777"})
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	h.signIn(admin)
+	return admin
+}
+
+func decode[T any](t *testing.T, rec *httptest.ResponseRecorder) T {
+	t.Helper()
+	var v T
+	if err := json.Unmarshal(rec.Body.Bytes(), &v); err != nil {
+		t.Fatalf("decode %q: %v", rec.Body.String(), err)
+	}
+	return v
+}
+
+func TestHealthReportsWhatsAppState(t *testing.T) {
+	rec := newHarness(t).do(http.MethodGet, "/api/health", "")
+	body := decode[struct {
+		OK       bool `json:"ok"`
+		WhatsApp struct {
+			Mode      string `json:"mode"`
+			Linked    bool   `json:"linked"`
+			Connected bool   `json:"connected"`
+		} `json:"whatsapp"`
+	}](t, rec)
+	if !body.OK || body.WhatsApp.Mode != "test" || !body.WhatsApp.Linked || !body.WhatsApp.Connected {
+		t.Fatalf("body = %+v", body)
+	}
+}
+
+func TestClientRoutesFallBackToIndex(t *testing.T) {
+	rec := newHarness(t).do(http.MethodGet, "/escala/123", "")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "app") || rec.Header().Get("Cache-Control") != "no-cache" {
+		t.Fatalf("status = %d, Cache-Control = %q, body = %q", rec.Code, rec.Header().Get("Cache-Control"), rec.Body)
+	}
+}
+
+func TestStaticFilesHaveTheRightHeaders(t *testing.T) {
+	h := newHarness(t)
+	if rec := h.do(http.MethodGet, "/assets/app-1.js", ""); !strings.Contains(rec.Header().Get("Cache-Control"), "immutable") {
+		t.Fatalf("asset Cache-Control = %q", rec.Header().Get("Cache-Control"))
+	}
+	if rec := h.do(http.MethodGet, "/manifest.webmanifest", ""); rec.Header().Get("Content-Type") != "application/manifest+json" {
+		t.Fatalf("manifest Content-Type = %q", rec.Header().Get("Content-Type"))
+	}
+}
+
+func TestMissingFrontEndBuildIsExplained(t *testing.T) {
+	h := httpserver.New(httpserver.Deps{Log: slog.New(slog.NewTextHandler(io.Discard, nil)), UI: fstest.MapFS{}})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d", rec.Code)
+	}
+}
+
+func TestUnknownAPIRouteIsJSON404(t *testing.T) {
+	rec := newHarness(t).do(http.MethodGet, "/api/nada", "")
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "error") {
+		t.Fatalf("status = %d, body = %q", rec.Code, rec.Body)
+	}
+}
+
+func TestRegistryRequiresAnAdministrator(t *testing.T) {
+	h := newHarness(t)
+	if rec := h.do(http.MethodGet, "/api/people", ""); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous: status = %d", rec.Code)
+	}
+	if rec := h.do(http.MethodGet, "/api/me", ""); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous /me: status = %d", rec.Code)
+	}
+
+	member, _ := h.store.CreatePerson(context.Background(), store.PersonInput{Name: "Membro", Phone: "11977776666"})
+	h.signIn(member)
+	if rec := h.do(http.MethodGet, "/api/me", ""); rec.Code != http.StatusOK || decode[store.Person](t, rec).ID != member.ID {
+		t.Fatalf("member /me: %d %s", rec.Code, rec.Body)
+	}
+	if rec := h.do(http.MethodGet, "/api/people", ""); rec.Code != http.StatusForbidden {
+		t.Fatalf("member on admin route: status = %d", rec.Code)
+	}
+}
+
+func TestLoginLinkWorksOnlyOnce(t *testing.T) {
+	h := newHarness(t)
+	admin, _ := h.store.EnsureAdmin(context.Background(), store.PersonInput{Name: "Admin", Phone: "11988887777"})
+	token, _ := h.store.CreateLoginToken(context.Background(), admin.ID, now, 15*time.Minute)
+	body := fmt.Sprintf(`{"token":%q}`, token)
+	if rec := h.do(http.MethodPost, "/api/auth/redeem", body); rec.Code != http.StatusOK {
+		t.Fatalf("first: %d", rec.Code)
+	}
+	if rec := h.do(http.MethodPost, "/api/auth/redeem", body); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("second: %d", rec.Code)
+	}
+}
+
+func TestLogoutEndsTheSession(t *testing.T) {
+	h := newHarness(t)
+	h.signInAdmin()
+	if rec := h.do(http.MethodPost, "/api/auth/logout", ""); rec.Code != http.StatusNoContent {
+		t.Fatalf("logout: %d", rec.Code)
+	}
+	if rec := h.do(http.MethodGet, "/api/me", ""); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("after logout: %d", rec.Code)
+	}
+}
+
+func TestMutationsRequireJSON(t *testing.T) {
+	h := newHarness(t)
+	h.signInAdmin()
+	rec := h.do(http.MethodPost, "/api/people", "name=Ana", "Content-Type", "application/x-www-form-urlencoded")
+	if rec.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("form post: status = %d", rec.Code)
+	}
+}
+
+func TestRegistryFlow(t *testing.T) {
+	h := newHarness(t)
+	admin := h.signInAdmin()
+
+	rec := h.do(http.MethodPost, "/api/ministries", `{"name":"Louvor","rotationUnit":"week"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create ministry: %d %s", rec.Code, rec.Body)
+	}
+	ministry := decode[store.Ministry](t, rec)
+
+	rec = h.do(http.MethodPost, fmt.Sprintf("/api/ministries/%d/roles", ministry.ID), `{"name":"Voz","slots":3}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create role: %d %s", rec.Code, rec.Body)
+	}
+	role := decode[store.Role](t, rec)
+
+	rec = h.do(http.MethodPost, "/api/people", `{"name":"Bia","phone":"(11) 96666-5555"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create person: %d %s", rec.Code, rec.Body)
+	}
+	person := decode[store.Person](t, rec)
+
+	rec = h.do(http.MethodPost, "/api/services", `{"name":"Culto de quinta","weekday":4,"startTime":"19:30"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create service: %d %s", rec.Code, rec.Body)
+	}
+	service := decode[store.Service](t, rec)
+
+	member := fmt.Sprintf(`{"isLeader":false,"roles":[{"roleId":%d,"fixed":false}]}`, role.ID)
+	if rec := h.do(http.MethodPut, fmt.Sprintf("/api/ministries/%d/members/%d", ministry.ID, person.ID), member); rec.Code != http.StatusNoContent {
+		t.Fatalf("put member: %d %s", rec.Code, rec.Body)
+	}
+	services := fmt.Sprintf(`{"serviceIds":[%d]}`, service.ID)
+	if rec := h.do(http.MethodPut, fmt.Sprintf("/api/ministries/%d/services", ministry.ID), services); rec.Code != http.StatusNoContent {
+		t.Fatalf("set services: %d %s", rec.Code, rec.Body)
+	}
+
+	rec = h.do(http.MethodGet, fmt.Sprintf("/api/ministries/%d", ministry.ID), "")
+	detail := decode[store.MinistryDetail](t, rec)
+	if len(detail.Roles) != 1 || len(detail.Members) != 1 || detail.Members[0].Roles[0].RoleID != role.ID || len(detail.ServiceIDs) != 1 {
+		t.Fatalf("detail = %+v", detail)
+	}
+
+	rec = h.do(http.MethodPost, "/api/people", `{"name":"Repetida","phone":"+55 11 96666-5555"}`)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "telefone") {
+		t.Fatalf("duplicate phone: %d %s", rec.Code, rec.Body)
+	}
+	if rec := h.do(http.MethodDelete, fmt.Sprintf("/api/people/%d", admin.ID), ""); rec.Code != http.StatusBadRequest {
+		t.Fatalf("self archive: %d", rec.Code)
+	}
+	if rec := h.do(http.MethodDelete, "/api/people/999", ""); rec.Code != http.StatusNotFound {
+		t.Fatalf("missing person: %d", rec.Code)
+	}
+}
+
+func TestAdminTokenStillWorksForWhatsAppTools(t *testing.T) {
+	h := newHarness(t)
+	if rec := h.do(http.MethodPost, "/api/admin/whatsapp/test-poll", `{"to":"1@g.us"}`); rec.Code != http.StatusUnauthorized || len(h.polls.polls) != 0 {
+		t.Fatalf("without token: %d, polls = %v", rec.Code, h.polls.polls)
+	}
+	if rec := h.do(http.MethodPost, "/api/admin/whatsapp/test-poll", `{"to":"1@g.us"}`, "Authorization", "Bearer errado"); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong token: %d", rec.Code)
+	}
+	rec := h.do(http.MethodPost, "/api/admin/whatsapp/test-poll", `{"to":"1@g.us"}`, "Authorization", "Bearer segredo")
+	if rec.Code != http.StatusOK || len(h.polls.polls) != 1 {
+		t.Fatalf("with token: %d %s, polls = %v", rec.Code, rec.Body, h.polls.polls)
+	}
+}
