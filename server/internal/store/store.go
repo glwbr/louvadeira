@@ -11,6 +11,8 @@ import (
 
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
+
+	"louvadeira/internal/phone"
 )
 
 var (
@@ -113,19 +115,19 @@ func NormalizePhone(raw string) (string, error) {
 			digits.WriteRune(r)
 		}
 	}
-	phone := digits.String()
+	number := digits.String()
 	international := strings.HasPrefix(strings.TrimSpace(raw), "+")
 	switch {
-	case phone == "":
+	case number == "":
 		return "", nil
-	case !international && (len(phone) == 10 || len(phone) == 11):
-		phone = "55" + phone
+	case !international && (len(number) == 10 || len(number) == 11):
+		number = "55" + number
 	}
-	brazilian := strings.HasPrefix(phone, "55")
-	if (brazilian && len(phone) != 12 && len(phone) != 13) || len(phone) < 8 || len(phone) > 15 {
+	brazilian := strings.HasPrefix(number, "55")
+	if (brazilian && len(number) != 12 && len(number) != 13) || len(number) < 8 || len(number) > 15 {
 		return "", invalid("telefone inválido: use DDD e número, como (11) 98888-7777")
 	}
-	return phone, nil
+	return phone.Canonical(number), nil
 }
 
 func nullable(value string) sql.NullString {

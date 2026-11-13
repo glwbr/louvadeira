@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+
+	"louvadeira/internal/phone"
 )
 
 /**
@@ -34,7 +36,7 @@ func (a Address) Normalize() Address {
 			digits.WriteRune(r)
 		}
 	}
-	return Address(digits.String())
+	return Address(phone.Canonical(digits.String()))
 }
 
 func (a Address) IsGroup() bool {
