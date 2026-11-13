@@ -79,6 +79,16 @@ func New(d Deps) http.Handler {
 	admin("PUT /api/ministries/{id}/members/{personId}", d.putMember)
 	admin("DELETE /api/ministries/{id}/members/{personId}", d.removeMember)
 	admin("PUT /api/ministries/{id}/services", d.setMinistryServices)
+	admin("PUT /api/ministries/{id}/roles/order", d.reorderRoles)
+
+	admin("GET /api/ministries/{id}/schedules/{month}", d.getSchedule)
+	admin("POST /api/ministries/{id}/schedules/{month}/generate", d.generateSchedule)
+	admin("POST /api/ministries/{id}/schedules/{month}/publish", d.publishSchedule)
+	admin("PUT /api/ministries/{id}/schedules/{month}/assignments/{assignmentId}", d.setAssignment)
+
+	admin("GET /api/unavailabilities", d.listUnavailabilities)
+	admin("POST /api/unavailabilities", d.createUnavailability)
+	admin("DELETE /api/unavailabilities/{id}", d.deleteUnavailability)
 
 	admin("GET /api/admin/whatsapp/groups", d.groups)
 	admin("POST /api/admin/whatsapp/test-poll", d.testPoll)

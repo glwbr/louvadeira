@@ -302,3 +302,59 @@ func TestAdminTokenStillWorksForWhatsAppTools(t *testing.T) {
 		t.Fatalf("with token: %d %s, polls = %v", rec.Code, rec.Body, h.polls.polls)
 	}
 }
+
+func TestScheduleFlow(t *testing.T) {
+	h := newHarness(t)
+	h.signInAdmin()
+	ctx := context.Background()
+	ministry, _ := h.store.CreateMinistry(ctx, store.MinistryInput{Name: "Louvor"})
+	role, _ := h.store.CreateRole(ctx, ministry.ID, store.RoleInput{Name: "Baixo", Slots: 1})
+	service, _ := h.store.CreateService(ctx, store.ServiceInput{Name: "Quinta", Weekday: 4, StartTime: "19:30"})
+	_ = h.store.SetMinistryServices(ctx, ministry.ID, []int64{service.ID})
+	bassist, _ := h.store.CreatePerson(ctx, store.PersonInput{Name: "Eli"})
+	_ = h.store.PutMember(ctx, ministry.ID, bassist.ID, store.MemberInput{Roles: []store.MemberRole{{RoleID: role.ID}}})
+	base := fmt.Sprintf("/api/ministries/%d/schedules", ministry.ID)
+
+	if rec := h.do(http.MethodGet, base+"/2026-12", ""); rec.Code != http.StatusNotFound {
+		t.Fatalf("before generating: %d", rec.Code)
+	}
+	if rec := h.do(http.MethodGet, base+"/2026-13", ""); rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad month: %d", rec.Code)
+	}
+	rec := h.do(http.MethodPost, base+"/2026-12/generate", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("generate: %d %s", rec.Code, rec.Body)
+	}
+	view := decode[store.ScheduleView](t, rec)
+	if len(view.Weeks) != 5 || view.Weeks[0].Services[0].Roles[0].Slots[0].PersonName != "Eli" {
+		t.Fatalf("view = %+v", view)
+	}
+
+	slot := view.Weeks[0].Services[0].Roles[0].Slots[0].AssignmentID
+	if rec := h.do(http.MethodPut, fmt.Sprintf("%s/2026-12/assignments/%d", base, slot), `{"personId":null}`); rec.Code != http.StatusNoContent {
+		t.Fatalf("clear slot: %d %s", rec.Code, rec.Body)
+	}
+	if rec := h.do(http.MethodPost, base+"/2026-12/publish", ""); rec.Code != http.StatusNoContent {
+		t.Fatalf("publish: %d %s", rec.Code, rec.Body)
+	}
+	rec = h.do(http.MethodPost, base+"/2026-12/generate", "")
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "publicada") {
+		t.Fatalf("regenerate published: %d %s", rec.Code, rec.Body)
+	}
+	view = decode[store.ScheduleView](t, h.do(http.MethodGet, base+"/2026-12", ""))
+	if view.Status != store.StatusPublished || view.Warnings != 1 {
+		t.Fatalf("published view: status %s, warnings %d", view.Status, view.Warnings)
+	}
+
+	rec = h.do(http.MethodPost, "/api/unavailabilities", fmt.Sprintf(`{"personId":%d,"startDate":"2026-12-24","endDate":"2026-12-26","note":"Natal"}`, bassist.ID))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create unavailability: %d %s", rec.Code, rec.Body)
+	}
+	list := decode[[]store.Unavailability](t, h.do(http.MethodGet, "/api/unavailabilities?from=2026-12-01&to=2026-12-31", ""))
+	if len(list) != 1 || list[0].PersonName != "Eli" {
+		t.Fatalf("unavailabilities = %+v", list)
+	}
+	if rec := h.do(http.MethodGet, "/api/unavailabilities?from=ontem&to=hoje", ""); rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad range: %d", rec.Code)
+	}
+}
