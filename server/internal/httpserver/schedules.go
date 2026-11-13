@@ -63,7 +63,7 @@ func (d Deps) setAssignment(w http.ResponseWriter, r *http.Request) {
 	if !ok || !okMonth || !okAssignment || !decodeJSON(w, r, &req) {
 		return
 	}
-	d.respond(w, http.StatusNoContent, nil, d.Store.SetAssignment(r.Context(), id, month, assignmentID, req.PersonID))
+	d.respond(w, http.StatusNoContent, nil, d.Store.SetAssignment(r.Context(), id, month, assignmentID, req.PersonID, d.now()))
 }
 
 func (d Deps) publishSchedule(w http.ResponseWriter, r *http.Request) {

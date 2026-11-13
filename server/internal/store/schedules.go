@@ -63,6 +63,8 @@ type ScheduleSlot struct {
 	AssignmentID int64       `json:"assignmentId"`
 	PersonID     int64       `json:"personId"`
 	PersonName   string      `json:"personName"`
+	Status       string      `json:"status"`
+	CoverOpen    bool        `json:"coverOpen"`
 	Warning      SlotWarning `json:"warning,omitempty"`
 }
 
@@ -197,9 +199,28 @@ func (s *Store) saveDraft(ctx context.Context, ministryID int64, month string, n
 }
 
 /**
- * CONSTRAINT: Only members of the ministry can be put in a slot; a nil person empties it.
+ * NOTE: Fails with ErrNotFound unless the slot belongs to the ministry's schedule for that month, and with a
+ * validation error while the schedule is still a draft (swaps only exist once it is published).
  */
-func (s *Store) SetAssignment(ctx context.Context, ministryID int64, month string, assignmentID int64, personID *int64) error {
+func (s *Store) CheckAssignment(ctx context.Context, ministryID int64, month string, assignmentID int64) error {
+	var status string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT sc.status FROM assignments a JOIN schedules sc ON sc.id = a.schedule_id
+		WHERE a.id = ? AND sc.ministry_id = ? AND sc.month = ?`, assignmentID, ministryID, month).Scan(&status)
+	if err != nil {
+		return notFoundIfNoRows(err)
+	}
+	if status != StatusPublished {
+		return invalid("publique a escala antes de registrar trocas")
+	}
+	return nil
+}
+
+/**
+ * CONSTRAINT: Only members of the ministry can be put in a slot; a nil person empties it. A manual change settles any
+ * swap still open for the slot and the new person has to confirm again.
+ */
+func (s *Store) SetAssignment(ctx context.Context, ministryID int64, month string, assignmentID int64, personID *int64, now time.Time) error {
 	var scheduleID int64
 	err := s.db.QueryRowContext(ctx, `
 		SELECT sc.id FROM assignments a JOIN schedules sc ON sc.id = a.schedule_id
@@ -217,8 +238,20 @@ func (s *Store) SetAssignment(ctx context.Context, ministryID int64, month strin
 			return invalid("essa pessoa não faz parte do ministério")
 		}
 	}
-	_, err = s.db.ExecContext(ctx, "UPDATE assignments SET person_id = ? WHERE id = ?", personID, assignmentID)
-	return err
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx,
+			"UPDATE assignments SET person_id = ?, status = 'scheduled', responded_at = NULL WHERE id = ?", personID, assignmentID); err != nil {
+			return err
+		}
+		outcome := CoverUncovered
+		if personID != nil {
+			outcome = CoverCovered
+		}
+		_, err := tx.ExecContext(ctx, `
+			UPDATE cover_requests SET status = ?, covered_by = ?, resolved_at = ?
+			WHERE assignment_id = ? AND status = 'open'`, outcome, personID, formatTime(now), assignmentID)
+		return err
+	})
 }
 
 /**
@@ -267,7 +300,8 @@ func (s *Store) ScheduleView(ctx context.Context, ministryID int64, month string
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT a.id, a.service_id, a.service_date, sv.name, sv.start_time, sv.communion_week, a.role_id, r.name, coalesce(a.person_id, 0), coalesce(p.name, '')
+		SELECT a.id, a.service_id, a.service_date, sv.name, sv.start_time, sv.communion_week, a.role_id, r.name, coalesce(a.person_id, 0), coalesce(p.name, ''),
+		       a.status, EXISTS (SELECT 1 FROM cover_requests cr WHERE cr.assignment_id = a.id AND cr.status = 'open')
 		FROM assignments a
 		JOIN services sv ON sv.id = a.service_id
 		JOIN roles r ON r.id = a.role_id
@@ -292,7 +326,7 @@ func (s *Store) ScheduleView(ctx context.Context, ministryID int64, month string
 		var roleName string
 		var communionWeek sql.NullInt64
 		if err := rows.Scan(&slot.AssignmentID, &occurrence.ServiceID, &occurrence.Date, &occurrence.Name, &occurrence.StartTime,
-			&communionWeek, &roleID, &roleName, &slot.PersonID, &slot.PersonName); err != nil {
+			&communionWeek, &roleID, &roleName, &slot.PersonID, &slot.PersonName, &slot.Status, &slot.CoverOpen); err != nil {
 			return ScheduleView{}, err
 		}
 		occurrence.Communion = communionWeek.Valid && nthWeekdayOfMonth(occurrence.Date) == int(communionWeek.Int64)

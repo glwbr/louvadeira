@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"strings"
 )
 
 type RotationUnit string
@@ -13,15 +14,21 @@ const (
 )
 
 type Ministry struct {
-	ID           int64        `json:"id"`
-	Name         string       `json:"name"`
-	RotationUnit RotationUnit `json:"rotationUnit"`
-	MemberCount  int          `json:"memberCount"`
+	ID            int64        `json:"id"`
+	Name          string       `json:"name"`
+	RotationUnit  RotationUnit `json:"rotationUnit"`
+	WhatsAppGroup string       `json:"whatsappGroup"`
+	MemberCount   int          `json:"memberCount"`
 }
 
+/**
+ * NOTE: WhatsAppGroup is the chat ID of the ministry's group ("...@g.us"), where published schedules and swaps are
+ * announced; empty means no group.
+ */
 type MinistryInput struct {
-	Name         string       `json:"name"`
-	RotationUnit RotationUnit `json:"rotationUnit"`
+	Name          string       `json:"name"`
+	RotationUnit  RotationUnit `json:"rotationUnit"`
+	WhatsAppGroup string       `json:"whatsappGroup"`
 }
 
 type Role struct {
@@ -72,7 +79,11 @@ func (in MinistryInput) clean() (MinistryInput, error) {
 	default:
 		return MinistryInput{}, invalid("rodízio inválido: use por semana ou por culto")
 	}
-	return MinistryInput{Name: name, RotationUnit: in.RotationUnit}, nil
+	group := strings.TrimSpace(in.WhatsAppGroup)
+	if group != "" && !strings.HasSuffix(group, "@g.us") {
+		return MinistryInput{}, invalid("grupo do WhatsApp inválido")
+	}
+	return MinistryInput{Name: name, RotationUnit: in.RotationUnit, WhatsAppGroup: group}, nil
 }
 
 func (in RoleInput) clean() (RoleInput, error) {
@@ -88,7 +99,7 @@ func (in RoleInput) clean() (RoleInput, error) {
 
 func (s *Store) ListMinistries(ctx context.Context) ([]Ministry, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT m.id, m.name, m.rotation_unit, count(mm.person_id)
+		SELECT m.id, m.name, m.rotation_unit, coalesce(m.whatsapp_group, ''), count(mm.person_id)
 		FROM ministries m
 		LEFT JOIN ministry_members mm ON mm.ministry_id = m.id
 		WHERE m.archived_at IS NULL
@@ -101,7 +112,7 @@ func (s *Store) ListMinistries(ctx context.Context) ([]Ministry, error) {
 	ministries := []Ministry{}
 	for rows.Next() {
 		var m Ministry
-		if err := rows.Scan(&m.ID, &m.Name, &m.RotationUnit, &m.MemberCount); err != nil {
+		if err := rows.Scan(&m.ID, &m.Name, &m.RotationUnit, &m.WhatsAppGroup, &m.MemberCount); err != nil {
 			return nil, err
 		}
 		ministries = append(ministries, m)
@@ -114,9 +125,10 @@ func (s *Store) CreateMinistry(ctx context.Context, in MinistryInput) (Ministry,
 	if err != nil {
 		return Ministry{}, err
 	}
-	m := Ministry{Name: in.Name, RotationUnit: in.RotationUnit}
+	m := Ministry{Name: in.Name, RotationUnit: in.RotationUnit, WhatsAppGroup: in.WhatsAppGroup}
 	err = s.db.QueryRowContext(ctx,
-		"INSERT INTO ministries (name, rotation_unit) VALUES (?, ?) RETURNING id", in.Name, in.RotationUnit).Scan(&m.ID)
+		"INSERT INTO ministries (name, rotation_unit, whatsapp_group) VALUES (?, ?, ?) RETURNING id",
+		in.Name, in.RotationUnit, nullable(in.WhatsAppGroup)).Scan(&m.ID)
 	if isUniqueViolation(err) {
 		return Ministry{}, invalid("já existe um ministério com esse nome")
 	}
@@ -129,7 +141,8 @@ func (s *Store) UpdateMinistry(ctx context.Context, id int64, in MinistryInput) 
 		return err
 	}
 	err = requireAffected(s.db.ExecContext(ctx,
-		"UPDATE ministries SET name = ?, rotation_unit = ? WHERE id = ? AND archived_at IS NULL", in.Name, in.RotationUnit, id))
+		"UPDATE ministries SET name = ?, rotation_unit = ?, whatsapp_group = ? WHERE id = ? AND archived_at IS NULL",
+		in.Name, in.RotationUnit, nullable(in.WhatsAppGroup), id))
 	if isUniqueViolation(err) {
 		return invalid("já existe um ministério com esse nome")
 	}
@@ -147,8 +160,8 @@ func (s *Store) ArchiveMinistry(ctx context.Context, id int64) error {
 func (s *Store) Ministry(ctx context.Context, id int64) (MinistryDetail, error) {
 	var d MinistryDetail
 	err := s.db.QueryRowContext(ctx,
-		"SELECT id, name, rotation_unit FROM ministries WHERE id = ? AND archived_at IS NULL", id,
-	).Scan(&d.ID, &d.Name, &d.RotationUnit)
+		"SELECT id, name, rotation_unit, coalesce(whatsapp_group, '') FROM ministries WHERE id = ? AND archived_at IS NULL", id,
+	).Scan(&d.ID, &d.Name, &d.RotationUnit, &d.WhatsAppGroup)
 	if err != nil {
 		return MinistryDetail{}, notFoundIfNoRows(err)
 	}

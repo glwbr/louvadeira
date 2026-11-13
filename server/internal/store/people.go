@@ -17,7 +17,10 @@ type PersonInput struct {
 	Phone string `json:"phone"`
 }
 
-const personColumns = "id, name, coalesce(phone, ''), is_admin"
+const (
+	personColumns  = "id, name, coalesce(phone, ''), is_admin"
+	personColumnsP = "p.id, p.name, coalesce(p.phone, ''), p.is_admin"
+)
 
 func scanPerson(row interface{ Scan(...any) error }) (Person, error) {
 	var p Person
