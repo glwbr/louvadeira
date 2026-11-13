@@ -352,3 +352,36 @@ func (s *Store) SetMinistryServices(ctx context.Context, ministryID int64, servi
 	}
 	return err
 }
+
+/**
+ * NOTE: The order is the priority the generator uses when people are short, so it must list every role of the
+ * ministry exactly once.
+ */
+func (s *Store) ReorderRoles(ctx context.Context, ministryID int64, roleIDs []int64) error {
+	current, err := s.roles(ctx, ministryID)
+	if err != nil {
+		return err
+	}
+	if len(current) != len(roleIDs) {
+		return invalid("envie todas as funções do ministério, cada uma uma vez")
+	}
+	seen := map[int64]bool{}
+	for _, role := range current {
+		seen[role.ID] = false
+	}
+	for _, id := range roleIDs {
+		done, known := seen[id]
+		if !known || done {
+			return invalid("envie todas as funções do ministério, cada uma uma vez")
+		}
+		seen[id] = true
+	}
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		for position, id := range roleIDs {
+			if _, err := tx.ExecContext(ctx, "UPDATE roles SET position = ? WHERE id = ? AND ministry_id = ?", position, id, ministryID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
