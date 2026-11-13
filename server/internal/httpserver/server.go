@@ -21,6 +21,7 @@ import (
 type WhatsApp interface {
 	Status() whatsapp.Status
 	Groups(ctx context.Context) ([]whatsapp.Group, error)
+	GroupParticipants(ctx context.Context, groupID messenger.Address) ([]whatsapp.Participant, error)
 }
 
 type Deps struct {
@@ -92,6 +93,7 @@ func New(d Deps) http.Handler {
 	admin("DELETE /api/unavailabilities/{id}", d.deleteUnavailability)
 
 	admin("GET /api/admin/whatsapp/groups", d.groups)
+	admin("GET /api/admin/whatsapp/groups/{group}/participants", d.groupParticipants)
 	admin("POST /api/admin/whatsapp/test-poll", d.testPoll)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "rota não encontrada")
@@ -120,6 +122,20 @@ func (d Deps) groups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, groups)
+}
+
+func (d Deps) groupParticipants(w http.ResponseWriter, r *http.Request) {
+	if d.WhatsApp == nil || !d.WhatsApp.Status().Connected {
+		writeError(w, http.StatusServiceUnavailable, "WhatsApp desconectado")
+		return
+	}
+	participants, err := d.WhatsApp.GroupParticipants(r.Context(), messenger.Address(r.PathValue("group")))
+	if err != nil {
+		d.Log.Error("listar participantes", "erro", err)
+		writeError(w, http.StatusBadGateway, "não consegui ler os participantes do grupo")
+		return
+	}
+	writeJSON(w, http.StatusOK, participants)
 }
 
 type testPollRequest struct {

@@ -29,6 +29,10 @@ func (f fakeWhatsApp) Groups(context.Context) ([]whatsapp.Group, error) {
 	return []whatsapp.Group{{ID: "1@g.us", Name: "Teste"}}, nil
 }
 
+func (f fakeWhatsApp) GroupParticipants(context.Context, messenger.Address) ([]whatsapp.Participant, error) {
+	return []whatsapp.Participant{{Phone: "5511988887777", Name: "Ana"}}, nil
+}
+
 type fakeMessenger struct{ polls []messenger.Address }
 
 func (f *fakeMessenger) SendText(context.Context, messenger.Address, string) (messenger.MessageID, error) {
@@ -364,5 +368,17 @@ func TestScheduleFlow(t *testing.T) {
 	}
 	if rec := h.do(http.MethodGet, "/api/unavailabilities?from=ontem&to=hoje", ""); rec.Code != http.StatusBadRequest {
 		t.Fatalf("bad range: %d", rec.Code)
+	}
+}
+
+func TestGroupParticipantsRequireAnAdministrator(t *testing.T) {
+	h := newHarness(t)
+	if rec := h.do(http.MethodGet, "/api/admin/whatsapp/groups/1@g.us/participants", ""); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous: %d", rec.Code)
+	}
+	h.signInAdmin()
+	rec := h.do(http.MethodGet, "/api/admin/whatsapp/groups/1@g.us/participants", "")
+	if rec.Code != http.StatusOK || decode[[]whatsapp.Participant](t, rec)[0].Phone != "5511988887777" {
+		t.Fatalf("participants: %d %s", rec.Code, rec.Body)
 	}
 }

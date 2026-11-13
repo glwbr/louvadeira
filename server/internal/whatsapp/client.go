@@ -37,6 +37,11 @@ type Group struct {
 	Name string            `json:"name"`
 }
 
+type Participant struct {
+	Phone string `json:"phone"`
+	Name  string `json:"name"`
+}
+
 type sentPoll struct {
 	question string
 	options  []string
@@ -174,6 +179,51 @@ func (c *Client) Groups(ctx context.Context) ([]Group, error) {
 		groups = append(groups, Group{ID: messenger.Address(info.JID.String()), Name: info.Name})
 	}
 	return groups, nil
+}
+
+/**
+ * NOTE: Names come from the linked phone's contacts or, failing that, the participant's WhatsApp push name, so the
+ * admin can recognise who is who. Members hidden behind a LID without a known phone number are left out.
+ */
+func (c *Client) GroupParticipants(ctx context.Context, groupID messenger.Address) ([]Participant, error) {
+	jid, err := types.ParseJID(string(groupID.Normalize()))
+	if err != nil || jid.Server != types.GroupServer {
+		return nil, fmt.Errorf("grupo inválido: %s", groupID)
+	}
+	info, err := c.wm.GetGroupInfo(ctx, jid)
+	if err != nil {
+		return nil, fmt.Errorf("ler o grupo: %w", err)
+	}
+	participants := make([]Participant, 0, len(info.Participants))
+	for _, member := range info.Participants {
+		phone := member.PhoneNumber
+		if phone.IsEmpty() && member.JID.Server == types.DefaultUserServer {
+			phone = member.JID
+		}
+		if phone.IsEmpty() && member.JID.Server == types.HiddenUserServer {
+			phone, _ = c.wm.Store.LIDs.GetPNForLID(ctx, member.JID)
+		}
+		if phone.IsEmpty() {
+			continue
+		}
+		participants = append(participants, Participant{Phone: phone.User, Name: c.contactName(ctx, phone, member.JID)})
+	}
+	return participants, nil
+}
+
+func (c *Client) contactName(ctx context.Context, ids ...types.JID) string {
+	for _, id := range ids {
+		contact, err := c.wm.Store.Contacts.GetContact(ctx, id)
+		if err != nil || !contact.Found {
+			continue
+		}
+		for _, name := range []string{contact.FullName, contact.FirstName, contact.PushName, contact.BusinessName} {
+			if name != "" {
+				return name
+			}
+		}
+	}
+	return ""
 }
 
 func (c *Client) SendText(ctx context.Context, to messenger.Address, text string) (messenger.MessageID, error) {
