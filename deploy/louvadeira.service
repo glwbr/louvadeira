@@ -1,0 +1,12 @@
+[Unit]
+Description=louvadeira, escalas dos ministérios
+
+[Service]
+WorkingDirectory=%h/louvadeira
+EnvironmentFile=%h/louvadeira/louvadeira.env
+ExecStart=%h/louvadeira/bin/louvadeira serve
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

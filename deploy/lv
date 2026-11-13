@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$HOME/louvadeira"
+set -a
+. ./louvadeira.env
+set +a
+exec ./bin/louvadeira "$@"
