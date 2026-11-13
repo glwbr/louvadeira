@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query"
-import { CalendarClock, Church, Home, LogOut, Users } from "lucide-react"
+import { CalendarClock, CalendarDays, Church, Home, LogOut, Users } from "lucide-react"
 import { NavLink, Outlet } from "react-router"
 
 import { Button } from "@/components/ui/button"
@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 
 const NAV = [
   { to: "/", label: "Início", icon: Home, end: true },
+  { to: "/escalas", label: "Escalas", icon: CalendarDays, end: false },
   { to: "/ministerios", label: "Ministérios", icon: Church, end: false },
   { to: "/pessoas", label: "Pessoas", icon: Users, end: false },
   { to: "/cultos", label: "Cultos", icon: CalendarClock, end: false },
@@ -42,7 +43,7 @@ export function AppShell() {
       </main>
 
       <nav className="fixed inset-x-0 bottom-0 z-10 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
-        <div className="mx-auto grid h-16 max-w-2xl grid-cols-4">
+        <div className="mx-auto grid h-16 max-w-2xl grid-cols-5">
           {NAV.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}

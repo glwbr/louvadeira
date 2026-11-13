@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, CalendarClock, Crown, ListChecks, Pencil, Pin, Plus, Users } from "lucide-react"
+import { ArrowDown, ArrowLeft, ArrowUp, CalendarClock, Crown, ListChecks, Pencil, Pin, Plus, Users } from "lucide-react"
 import { useState } from "react"
 import { Link, useParams } from "react-router"
 
@@ -145,8 +145,19 @@ function TeamTab({ ministry }: { ministry: MinistryDetail }) {
 }
 
 function RolesTab({ ministry }: { ministry: MinistryDetail }) {
+  const queryClient = useQueryClient()
   const [selected, setSelected] = useState<Role | undefined>()
   const [open, setOpen] = useState(false)
+  const reorder = useMutation({
+    mutationFn: (roleIds: number[]) => api.ministries.reorderRoles(ministry.id, roleIds),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.ministry(ministry.id) }),
+    onError: toastError,
+  })
+  const move = (index: number, delta: number) => {
+    const ids = ministry.roles.map((role) => role.id)
+    ;[ids[index], ids[index + delta]] = [ids[index + delta], ids[index]]
+    reorder.mutate(ids)
+  }
 
   const openDialog = (role?: Role) => {
     setSelected(role)
@@ -165,29 +176,56 @@ function RolesTab({ ministry }: { ministry: MinistryDetail }) {
       </div>
       {ministry.roles.length === 0 ? (
         <EmptyState icon={ListChecks} title="Nenhuma função">
-          Ex.: Voz com 3 vagas, Baixo com 1, Bateria com 1, Violão com 1.
+          Ex.: Voz com 3 vagas, Violão com 1, Baixo com 1, Bateria com 1.
         </EmptyState>
       ) : (
-        <ul className="flex flex-col divide-y rounded-xl border bg-card">
-          {ministry.roles.map((role) => (
-            <li key={role.id}>
-              <button
-                type="button"
-                onClick={() => openDialog(role)}
-                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-accent"
-              >
-                <div>
-                  <p className="font-medium">{role.name}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {role.slots} {role.slots === 1 ? "vaga" : "vagas"} por escala · {holders(role.id)}{" "}
-                    {holders(role.id) === 1 ? "pessoa faz" : "pessoas fazem"}
-                  </p>
-                </div>
-                <Pencil className="size-4 text-muted-foreground" />
-              </button>
-            </li>
-          ))}
-        </ul>
+        <>
+          <p className="mb-3 text-sm text-muted-foreground">
+            A ordem é a prioridade quando falta gente: as primeiras funções são preenchidas antes. Deixe o violão antes
+            da bateria para o baterista cobrir o violão quando o líder faltar.
+          </p>
+          <ul className="flex flex-col divide-y rounded-xl border bg-card">
+            {ministry.roles.map((role, index) => (
+              <li key={role.id} className="flex items-center gap-1 pr-2">
+                <button
+                  type="button"
+                  onClick={() => openDialog(role)}
+                  className="flex min-w-0 flex-1 items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-accent"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium">
+                      <span className="mr-2 text-muted-foreground">{index + 1}.</span>
+                      {role.name}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {role.slots} {role.slots === 1 ? "vaga" : "vagas"} por escala · {holders(role.id)}{" "}
+                      {holders(role.id) === 1 ? "pessoa faz" : "pessoas fazem"}
+                    </p>
+                  </div>
+                  <Pencil className="size-4 shrink-0 text-muted-foreground" />
+                </button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Subir ${role.name}`}
+                  disabled={index === 0 || reorder.isPending}
+                  onClick={() => move(index, -1)}
+                >
+                  <ArrowUp />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Descer ${role.name}`}
+                  disabled={index === ministry.roles.length - 1 || reorder.isPending}
+                  onClick={() => move(index, 1)}
+                >
+                  <ArrowDown />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
       <RoleDialog open={open} onOpenChange={setOpen} ministryId={ministry.id} role={selected} />
     </>

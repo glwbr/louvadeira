@@ -75,6 +75,56 @@ export type MinistryDetail = Ministry & {
   serviceIds: number[]
 }
 
+export type SlotWarning = "empty" | "unavailable" | "doubleBooked" | "notMember"
+
+export type ScheduleSlot = {
+  assignmentId: number
+  personId: number
+  personName: string
+  warning?: SlotWarning
+}
+
+export type ScheduleRole = {
+  roleId: number
+  name: string
+  slots: ScheduleSlot[]
+}
+
+export type ScheduleService = {
+  serviceId: number
+  date: string
+  name: string
+  startTime: string
+  roles: ScheduleRole[]
+}
+
+export type ScheduleWeek = {
+  start: string
+  services: ScheduleService[]
+}
+
+export type ScheduleView = {
+  id: number
+  ministryId: number
+  month: string
+  status: "draft" | "published"
+  generatedAt: string
+  publishedAt: string
+  warnings: number
+  weeks: ScheduleWeek[]
+}
+
+export type Unavailability = {
+  id: number
+  personId: number
+  personName: string
+  startDate: string
+  endDate: string
+  note: string
+}
+
+export type UnavailabilityInput = Omit<Unavailability, "id" | "personName">
+
 export class ApiError extends Error {
   readonly status: number
 
@@ -135,6 +185,24 @@ export const api = {
       request<void>("DELETE", `/ministries/${id}/members/${personId}`),
     setServices: (id: number, serviceIds: number[]) =>
       request<void>("PUT", `/ministries/${id}/services`, { serviceIds }),
+    reorderRoles: (id: number, roleIds: number[]) => request<void>("PUT", `/ministries/${id}/roles/order`, { roleIds }),
+  },
+
+  schedules: {
+    get: (ministryId: number, month: string) =>
+      request<ScheduleView>("GET", `/ministries/${ministryId}/schedules/${month}`),
+    generate: (ministryId: number, month: string) =>
+      request<ScheduleView>("POST", `/ministries/${ministryId}/schedules/${month}/generate`),
+    publish: (ministryId: number, month: string) =>
+      request<void>("POST", `/ministries/${ministryId}/schedules/${month}/publish`),
+    assign: (ministryId: number, month: string, assignmentId: number, personId: number | null) =>
+      request<void>("PUT", `/ministries/${ministryId}/schedules/${month}/assignments/${assignmentId}`, { personId }),
+  },
+
+  unavailabilities: {
+    list: (from: string, to: string) => request<Unavailability[]>("GET", `/unavailabilities?from=${from}&to=${to}`),
+    create: (input: UnavailabilityInput) => request<Unavailability>("POST", "/unavailabilities", input),
+    remove: (id: number) => request<void>("DELETE", `/unavailabilities/${id}`),
   },
 }
 
@@ -145,4 +213,6 @@ export const queryKeys = {
   services: ["services"] as const,
   ministries: ["ministries"] as const,
   ministry: (id: number) => ["ministries", id] as const,
+  schedule: (ministryId: number, month: string) => ["schedules", ministryId, month] as const,
+  unavailabilities: (from: string, to: string) => ["unavailabilities", from, to] as const,
 }
