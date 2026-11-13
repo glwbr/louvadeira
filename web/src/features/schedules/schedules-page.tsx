@@ -1,5 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { CalendarDays, CalendarOff, ChevronLeft, ChevronRight, Church, Plus, RefreshCw, Send, Sparkles, Trash2, X } from "lucide-react"
+import {
+  ArrowLeftRight,
+  CalendarDays,
+  CalendarOff,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Church,
+  Hourglass,
+  Plus,
+  RefreshCw,
+  Send,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react"
 import { useState } from "react"
 import { Link, useSearchParams } from "react-router"
 import { toast } from "sonner"
@@ -11,7 +26,7 @@ import { PageHeader } from "@/components/page-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ApiError, api, queryKeys, type ScheduleSlot, type ScheduleView, type Unavailability } from "@/lib/api"
+import { ApiError, api, queryKeys, type CoverRequest, type ScheduleSlot, type ScheduleView, type Unavailability } from "@/lib/api"
 import { toastError } from "@/lib/errors"
 import {
   REASON_LABEL,
@@ -233,6 +248,8 @@ function ScheduleBoard({ ministryId, month }: { ministryId: number; month: strin
         </>
       )}
 
+      {schedule.data?.status === "published" && <CoversCard ministryId={ministryId} month={month} />}
+
       <UnavailabilityCard list={unavailabilities.data ?? []} defaultDate={range.from} />
 
       {ministry.data && (
@@ -241,6 +258,7 @@ function ScheduleBoard({ ministryId, month }: { ministryId: number; month: strin
           onClose={() => setSelection(undefined)}
           ministry={ministry.data}
           month={month}
+          published={schedule.data?.status === "published"}
           unavailabilities={unavailabilities.data ?? []}
         />
       )}
@@ -265,7 +283,11 @@ function SlotChip({ slot, onClick }: { slot: ScheduleSlot; onClick: () => void }
         slot.warning ? "border-destructive/50 bg-destructive/10 text-destructive" : "border-border bg-secondary"
       )}
     >
-      {slot.warning === "empty" ? "Vago" : slot.personName}
+      {slot.status === "confirmed" && <Check className="size-3.5 text-emerald-400" aria-label="confirmado" />}
+      {slot.coverOpen && <Hourglass className="size-3.5 text-amber-400" aria-label="procurando substituto" />}
+      <span className={cn(slot.status === "declined" && !slot.coverOpen && "line-through")}>
+        {slot.warning === "empty" ? "Vago" : slot.personName}
+      </span>
       {warning && <span className="text-xs opacity-80">· {warning}</span>}
     </button>
   )
@@ -331,4 +353,59 @@ function scheduleRange(view?: ScheduleView): { from: string; to: string } | unde
     return undefined
   }
   return { from: dates[0], to: dates[dates.length - 1] }
+}
+
+const COVER_STATUS = {
+  open: "Procurando substituto",
+  covered: "Coberto",
+  uncovered: "Ninguém pôde cobrir",
+} as const
+
+function CoversCard({ ministryId, month }: { ministryId: number; month: string }) {
+  const covers = useQuery({
+    queryKey: queryKeys.covers(ministryId, month),
+    queryFn: () => api.schedules.covers(ministryId, month),
+    refetchInterval: 30_000,
+  })
+  if (!covers.data || covers.data.length === 0) {
+    return null
+  }
+  return (
+    <section className="rounded-xl border bg-card">
+      <header className="flex items-center gap-2 border-b px-4 py-2.5">
+        <ArrowLeftRight className="size-4 text-primary" />
+        <h2 className="font-medium">Trocas</h2>
+      </header>
+      <ul className="divide-y">
+        {covers.data.map((cover) => (
+          <CoverItem key={cover.id} cover={cover} />
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+function CoverItem({ cover }: { cover: CoverRequest }) {
+  const answers = cover.invites.map((invite) =>
+    invite.answer === "no" ? `${invite.name} (não pode)` : invite.answer === "yes" ? `${invite.name} (aceitou)` : invite.name
+  )
+  return (
+    <li className="flex flex-col gap-1 px-4 py-2.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium">
+          {weekdayOf(cover.date)}, {formatDay(cover.date)} · {cover.roleName}
+        </span>
+        <Badge variant={cover.status === "covered" ? "default" : cover.status === "open" ? "secondary" : "destructive"}>
+          {COVER_STATUS[cover.status]}
+        </Badge>
+        {cover.late && <Badge variant="outline">Aviso tardio</Badge>}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {cover.absentName} não pode.
+        {cover.status === "covered" && ` ${cover.coveredBy} cobre.`}
+        {cover.status !== "covered" && answers.length > 0 && ` Convidados: ${answers.join(", ")}.`}
+        {cover.status !== "covered" && answers.length === 0 && " Ninguém da equipe estava livre."}
+      </p>
+    </li>
+  )
 }

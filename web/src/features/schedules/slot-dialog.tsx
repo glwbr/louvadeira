@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Check } from "lucide-react"
 import { toast } from "sonner"
 
+import { ConfirmButton } from "@/components/confirm-button"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -29,10 +30,11 @@ type Props = {
   onClose: () => void
   ministry: MinistryDetail
   month: string
+  published: boolean
   unavailabilities: Unavailability[]
 }
 
-export function SlotDialog({ selection, onClose, ministry, month, unavailabilities }: Props) {
+export function SlotDialog({ selection, onClose, ministry, month, published, unavailabilities }: Props) {
   return (
     <Dialog open={Boolean(selection)} onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
@@ -41,6 +43,7 @@ export function SlotDialog({ selection, onClose, ministry, month, unavailabiliti
             selection={selection}
             ministry={ministry}
             month={month}
+            published={published}
             unavailabilities={unavailabilities}
             onDone={onClose}
           />
@@ -54,12 +57,14 @@ function SlotPicker({
   selection,
   ministry,
   month,
+  published,
   unavailabilities,
   onDone,
 }: {
   selection: SlotSelection
   ministry: MinistryDetail
   month: string
+  published: boolean
   unavailabilities: Unavailability[]
   onDone: () => void
 }) {
@@ -70,6 +75,20 @@ function SlotPicker({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.schedule(ministry.id, month) })
       toast.success("Escala atualizada")
+      onDone()
+    },
+    onError: toastError,
+  })
+
+  const decline = useMutation({
+    mutationFn: () => api.schedules.decline(ministry.id, month, slot.assignmentId),
+    onSuccess: (request) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.schedule(ministry.id, month) })
+      toast.success(
+        request.invites.length > 0
+          ? `Convite enviado para ${request.invites.map((i) => i.name).join(", ")}`
+          : "Ninguém livre para cobrir; a vaga ficou com você"
+      )
       onDone()
     },
     onError: toastError,
@@ -127,7 +146,18 @@ function SlotPicker({
           </>
         )}
       </div>
-      <DialogFooter>
+      <DialogFooter className="gap-2 sm:justify-between">
+        {published && slot.personId !== 0 && slot.status !== "declined" ? (
+          <ConfirmButton
+            label={`${slot.personName.split(" ")[0]} não pode`}
+            title={`${slot.personName} não pode ir?`}
+            description="Quem faz essa função e está livre recebe no WhatsApp o convite para cobrir. O primeiro que aceitar fica com a vaga."
+            onConfirm={() => decline.mutate()}
+            pending={decline.isPending}
+          />
+        ) : (
+          <span />
+        )}
         <Button
           type="button"
           variant="outline"

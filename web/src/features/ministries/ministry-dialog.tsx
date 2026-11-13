@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState, type FormEvent } from "react"
 import { useNavigate } from "react-router"
 import { toast } from "sonner"
@@ -32,14 +32,17 @@ function MinistryForm({ ministry, onDone }: { ministry?: Ministry; onDone: () =>
   const navigate = useNavigate()
   const [name, setName] = useState(ministry?.name ?? "")
   const [rotationUnit, setRotationUnit] = useState<RotationUnit>(ministry?.rotationUnit ?? "week")
+  const [whatsappGroup, setWhatsappGroup] = useState(ministry?.whatsappGroup || "none")
+  const groups = useQuery({ queryKey: queryKeys.whatsappGroups, queryFn: api.whatsapp.groups, retry: false, staleTime: 5 * 60_000 })
+  const group = whatsappGroup === "none" ? "" : whatsappGroup
 
   const save = useMutation({
     mutationFn: async () => {
       if (ministry) {
-        await api.ministries.update(ministry.id, { name, rotationUnit })
+        await api.ministries.update(ministry.id, { name, rotationUnit, whatsappGroup: group })
         return ministry.id
       }
-      return (await api.ministries.create({ name, rotationUnit })).id
+      return (await api.ministries.create({ name, rotationUnit, whatsappGroup: group })).id
     },
     onSuccess: (id) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.ministries })
@@ -91,6 +94,23 @@ function MinistryForm({ ministry, onDone }: { ministry?: Ministry; onDone: () =>
         <p className="text-xs text-muted-foreground">
           Por semana: a mesma equipe serve em todos os cultos da semana. Por culto: cada culto tem a sua equipe.
         </p>
+      </div>
+      <div className="grid gap-2">
+        <Label>Grupo do WhatsApp</Label>
+        <Select value={whatsappGroup} onValueChange={setWhatsappGroup} disabled={!groups.data}>
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder={groups.isError ? "WhatsApp desconectado" : "Carregando grupos…"} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Sem grupo</SelectItem>
+            {groups.data?.map((g) => (
+              <SelectItem key={g.id} value={g.id}>
+                {g.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">Onde a escala publicada e as trocas são anunciadas.</p>
       </div>
       <DialogFooter className="gap-2 sm:justify-between">
         {ministry ? (

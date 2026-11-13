@@ -36,12 +36,19 @@ export type Ministry = {
   id: number
   name: string
   rotationUnit: RotationUnit
+  whatsappGroup: string
   memberCount: number
 }
 
 export type MinistryInput = {
   name: string
   rotationUnit: RotationUnit
+  whatsappGroup: string
+}
+
+export type WhatsAppGroup = {
+  id: string
+  name: string
 }
 
 export type Role = {
@@ -78,11 +85,30 @@ export type MinistryDetail = Ministry & {
 
 export type SlotWarning = "empty" | "unavailable" | "doubleBooked" | "notMember"
 
+export type AssignmentStatus = "scheduled" | "confirmed" | "declined"
+
 export type ScheduleSlot = {
   assignmentId: number
   personId: number
   personName: string
+  status: AssignmentStatus
+  coverOpen: boolean
   warning?: SlotWarning
+}
+
+export type CoverRequest = {
+  id: number
+  assignmentId: number
+  date: string
+  serviceName: string
+  startTime: string
+  roleName: string
+  absentName: string
+  status: "open" | "covered" | "uncovered"
+  late: boolean
+  coveredBy: string
+  createdAt: string
+  invites: { personId: number; name: string; answer: "" | "yes" | "no" }[]
 }
 
 export type ScheduleRole = {
@@ -203,6 +229,14 @@ export const api = {
       request<void>("POST", `/ministries/${ministryId}/schedules/${month}/publish`),
     assign: (ministryId: number, month: string, assignmentId: number, personId: number | null) =>
       request<void>("PUT", `/ministries/${ministryId}/schedules/${month}/assignments/${assignmentId}`, { personId }),
+    decline: (ministryId: number, month: string, assignmentId: number) =>
+      request<CoverRequest>("POST", `/ministries/${ministryId}/schedules/${month}/assignments/${assignmentId}/decline`),
+    covers: (ministryId: number, month: string) =>
+      request<CoverRequest[]>("GET", `/ministries/${ministryId}/schedules/${month}/covers`),
+  },
+
+  whatsapp: {
+    groups: () => request<WhatsAppGroup[]>("GET", "/admin/whatsapp/groups"),
   },
 
   unavailabilities: {
@@ -220,5 +254,7 @@ export const queryKeys = {
   ministries: ["ministries"] as const,
   ministry: (id: number) => ["ministries", id] as const,
   schedule: (ministryId: number, month: string) => ["schedules", ministryId, month] as const,
+  covers: (ministryId: number, month: string) => ["schedules", ministryId, month, "covers"] as const,
+  whatsappGroups: ["whatsapp-groups"] as const,
   unavailabilities: (from: string, to: string) => ["unavailabilities", from, to] as const,
 }
