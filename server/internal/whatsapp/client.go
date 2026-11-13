@@ -2,7 +2,6 @@ package whatsapp
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -42,14 +41,10 @@ type Participant struct {
 	Name  string `json:"name"`
 }
 
-type sentPoll struct {
-	question string
-	options  []string
-}
-
 /**
  * NOTE: Client links the server to a WhatsApp number as a companion device, like WhatsApp Web. It only acts on
- * what the app itself sent: votes on its own polls. Every other chat on the number is ignored and never stored.
+ * what the app itself sent: votes on its own polls (handed to the vote handler) and replies to its button tests.
+ * Every other chat on the number is ignored and never stored.
  */
 type Client struct {
 	wm        *whatsmeow.Client
@@ -59,8 +54,9 @@ type Client struct {
 	connected chan struct{}
 	once      sync.Once
 
-	mu    sync.Mutex
-	polls map[types.MessageID]sentPoll
+	mu          sync.Mutex
+	onVote      func(context.Context, messenger.Vote)
+	buttonTests map[types.MessageID]string
 }
 
 func Open(ctx context.Context, dbPath string, log *slog.Logger) (*Client, error) {
@@ -79,11 +75,11 @@ func Open(ctx context.Context, dbPath string, log *slog.Logger) (*Client, error)
 	wm.ManualHistorySyncDownload = true
 
 	c := &Client{
-		wm:        wm,
-		container: container,
-		log:       log,
-		connected: make(chan struct{}),
-		polls:     make(map[types.MessageID]sentPoll),
+		wm:          wm,
+		container:   container,
+		log:         log,
+		connected:   make(chan struct{}),
+		buttonTests: make(map[types.MessageID]string),
 	}
 	wm.AddEventHandler(c.handle)
 	return c, nil
@@ -92,6 +88,19 @@ func Open(ctx context.Context, dbPath string, log *slog.Logger) (*Client, error)
 func (c *Client) Close() {
 	c.wm.Disconnect()
 	c.container.Close()
+}
+
+func (c *Client) OnVote(handler func(context.Context, messenger.Vote)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.onVote = handler
+}
+
+func (c *Client) OwnPhone() string {
+	if c.wm.Store.ID == nil {
+		return ""
+	}
+	return c.wm.Store.ID.User
 }
 
 func (c *Client) Status() Status {
@@ -247,10 +256,6 @@ func (c *Client) SendPoll(ctx context.Context, to messenger.Address, question st
 	if err != nil {
 		return "", fmt.Errorf("enviar enquete: %w", err)
 	}
-	// TODO: Persist sent polls in app.db (slice 4) so votes still resolve after a restart.
-	c.mu.Lock()
-	c.polls[resp.ID] = sentPoll{question: question, options: options}
-	c.mu.Unlock()
 	return messenger.MessageID(resp.ID), nil
 }
 
@@ -289,26 +294,35 @@ func (c *Client) handle(evt any) {
 }
 
 func (c *Client) handleMessage(e *events.Message) {
-	update := e.Message.GetPollUpdateMessage()
-	if update == nil {
+	if update := e.Message.GetPollUpdateMessage(); update != nil {
+		c.handleVote(e)
+		return
+	}
+	c.logButtonReply(e)
+}
+
+/**
+ * NOTE: Decryption only works for polls this number created, so votes on anyone else's polls fail here and are
+ * dropped without being read.
+ */
+func (c *Client) handleVote(e *events.Message) {
+	ctx := context.Background()
+	vote, err := c.wm.DecryptPollVote(ctx, e)
+	if err != nil {
 		return
 	}
 	c.mu.Lock()
-	poll, ours := c.polls[types.MessageID(update.GetPollCreationMessageKey().GetID())]
+	handler := c.onVote
 	c.mu.Unlock()
-	if !ours {
+	if handler == nil {
 		return
 	}
-	vote, err := c.wm.DecryptPollVote(context.Background(), e)
-	if err != nil {
-		c.log.Error("não consegui ler o voto", "erro", err)
-		return
-	}
-	c.log.Info("voto recebido",
-		"enquete", poll.question,
-		"quem", e.Info.PushName,
-		"escolha", matchOptions(poll.options, vote.GetSelectedOptions()),
-	)
+	handler(ctx, messenger.Vote{
+		PollID:   messenger.MessageID(e.Message.GetPollUpdateMessage().GetPollCreationMessageKey().GetID()),
+		Selected: vote.GetSelectedOptions(),
+		FromMe:   e.Info.IsFromMe,
+		Sender:   e.Info.PushName,
+	})
 }
 
 func (c *Client) waitConnected(ctx context.Context) error {
@@ -320,18 +334,4 @@ func (c *Client) waitConnected(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-}
-
-// NOTE: WhatsApp poll votes carry SHA-256 hashes of the chosen option names, not the names themselves.
-func matchOptions(options []string, selected [][]byte) []string {
-	chosen := make([]string, 0, len(selected))
-	for _, hash := range selected {
-		for _, option := range options {
-			sum := sha256.Sum256([]byte(option))
-			if string(sum[:]) == string(hash) {
-				chosen = append(chosen, option)
-			}
-		}
-	}
-	return chosen
 }
