@@ -1,0 +1,287 @@
+package whatsapp
+
+import (
+	"context"
+	"crypto/sha256"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/mdp/qrterminal/v3"
+	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/store"
+	"go.mau.fi/whatsmeow/store/sqlstore"
+	"go.mau.fi/whatsmeow/types"
+	"go.mau.fi/whatsmeow/types/events"
+	waLog "go.mau.fi/whatsmeow/util/log"
+	"google.golang.org/protobuf/proto"
+
+	"louvadeira/internal/messenger"
+	"louvadeira/internal/storage"
+)
+
+const connectTimeout = 30 * time.Second
+
+type Status struct {
+	Linked    bool `json:"linked"`
+	Connected bool `json:"connected"`
+}
+
+type Group struct {
+	ID   messenger.Address `json:"id"`
+	Name string            `json:"name"`
+}
+
+type sentPoll struct {
+	question string
+	options  []string
+}
+
+/**
+ * NOTE: Client links the server to a WhatsApp number as a companion device, like WhatsApp Web. It only acts on
+ * what the app itself sent: votes on its own polls. Every other chat on the number is ignored and never stored.
+ */
+type Client struct {
+	wm        *whatsmeow.Client
+	container *sqlstore.Container
+	log       *slog.Logger
+
+	connected chan struct{}
+	once      sync.Once
+
+	mu    sync.Mutex
+	polls map[types.MessageID]sentPoll
+}
+
+func Open(ctx context.Context, dbPath string, log *slog.Logger) (*Client, error) {
+	store.SetOSInfo("louvadeira", [3]uint32{0, 1, 0})
+	container, err := sqlstore.New(ctx, "sqlite", storage.DSN(dbPath), waLog.Noop)
+	if err != nil {
+		return nil, fmt.Errorf("abrir sessão do WhatsApp: %w", err)
+	}
+	device, err := container.GetFirstDevice(ctx)
+	if err != nil {
+		container.Close()
+		return nil, fmt.Errorf("ler aparelho do WhatsApp: %w", err)
+	}
+	wm := whatsmeow.NewClient(device, waLog.Stdout("whatsmeow", "WARN", false))
+	// NOTE: Manual mode means the chat history WhatsApp offers on linking is never downloaded.
+	wm.ManualHistorySyncDownload = true
+
+	c := &Client{
+		wm:        wm,
+		container: container,
+		log:       log,
+		connected: make(chan struct{}),
+		polls:     make(map[types.MessageID]sentPoll),
+	}
+	wm.AddEventHandler(c.handle)
+	return c, nil
+}
+
+func (c *Client) Close() {
+	c.wm.Disconnect()
+	c.container.Close()
+}
+
+func (c *Client) Status() Status {
+	return Status{Linked: c.wm.Store.ID != nil, Connected: c.wm.IsConnected() && c.wm.IsLoggedIn()}
+}
+
+func (c *Client) Connect(ctx context.Context) error {
+	if c.wm.Store.ID == nil {
+		return errors.New("WhatsApp não vinculado; rode 'louvadeira whatsapp link'")
+	}
+	if err := c.wm.Connect(); err != nil {
+		return fmt.Errorf("conectar ao WhatsApp: %w", err)
+	}
+	select {
+	case <-c.connected:
+		return nil
+	case <-time.After(connectTimeout):
+		return errors.New("WhatsApp não confirmou a conexão a tempo")
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+/**
+ * NOTE: With an empty phone the link uses a QR code printed to out; with a phone number (country code
+ * included) it prints an 8-character code to type under "Conectar com número de telefone".
+ */
+func (c *Client) Link(ctx context.Context, phone string, out io.Writer) error {
+	if c.wm.Store.ID != nil {
+		return errors.New("este servidor já está vinculado; rode 'louvadeira whatsapp logout' antes")
+	}
+	qrs, err := c.wm.GetQRChannel(ctx)
+	if err != nil {
+		return err
+	}
+	if err := c.wm.Connect(); err != nil {
+		return fmt.Errorf("conectar ao WhatsApp: %w", err)
+	}
+	codeShown := false
+	for item := range qrs {
+		switch {
+		case item.Event == whatsmeow.QRChannelEventCode && phone == "":
+			fmt.Fprintln(out, "\nNo celular: WhatsApp > Aparelhos conectados > Conectar aparelho, e leia o QR Code:")
+			qrterminal.GenerateHalfBlock(item.Code, qrterminal.L, out)
+		case item.Event == whatsmeow.QRChannelEventCode && !codeShown:
+			code, err := c.wm.PairPhone(ctx, string(messenger.Address(phone).Normalize()), true, whatsmeow.PairClientChrome, "Chrome (Linux)")
+			if err != nil {
+				return fmt.Errorf("gerar código de pareamento: %w", err)
+			}
+			fmt.Fprintf(out, "\nNo celular: WhatsApp > Aparelhos conectados > Conectar aparelho > Conectar com número de telefone.\nDigite o código: %s\n", code)
+			codeShown = true
+		case item == whatsmeow.QRChannelSuccess:
+			fmt.Fprintln(out, "Vinculado. Terminando a configuração...")
+			return c.waitConnected(ctx)
+		case item == whatsmeow.QRChannelTimeout:
+			return errors.New("tempo esgotado; rode o comando de novo")
+		case item.Event == whatsmeow.QRChannelEventError:
+			return fmt.Errorf("vínculo falhou: %w", item.Error)
+		case item.Event != whatsmeow.QRChannelEventCode:
+			return fmt.Errorf("vínculo falhou: %s", item.Event)
+		}
+	}
+	return errors.New("o WhatsApp encerrou o vínculo sem confirmar")
+}
+
+func (c *Client) Logout(ctx context.Context) error {
+	if c.wm.Store.ID == nil {
+		return nil
+	}
+	if !c.wm.IsConnected() {
+		if err := c.Connect(ctx); err != nil {
+			return err
+		}
+	}
+	return c.wm.Logout(ctx)
+}
+
+func (c *Client) Groups(ctx context.Context) ([]Group, error) {
+	infos, err := c.wm.GetJoinedGroups(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listar grupos: %w", err)
+	}
+	groups := make([]Group, 0, len(infos))
+	for _, info := range infos {
+		groups = append(groups, Group{ID: messenger.Address(info.JID.String()), Name: info.Name})
+	}
+	return groups, nil
+}
+
+func (c *Client) SendText(ctx context.Context, to messenger.Address, text string) (messenger.MessageID, error) {
+	jid, err := c.resolve(ctx, to)
+	if err != nil {
+		return "", err
+	}
+	resp, err := c.wm.SendMessage(ctx, jid, &waE2E.Message{Conversation: proto.String(text)})
+	if err != nil {
+		return "", fmt.Errorf("enviar mensagem: %w", err)
+	}
+	return messenger.MessageID(resp.ID), nil
+}
+
+func (c *Client) SendPoll(ctx context.Context, to messenger.Address, question string, options []string) (messenger.MessageID, error) {
+	jid, err := c.resolve(ctx, to)
+	if err != nil {
+		return "", err
+	}
+	resp, err := c.wm.SendMessage(ctx, jid, c.wm.BuildPollCreation(question, options, 1))
+	if err != nil {
+		return "", fmt.Errorf("enviar enquete: %w", err)
+	}
+	// TODO: Persist sent polls in app.db (slice 4) so votes still resolve after a restart.
+	c.mu.Lock()
+	c.polls[resp.ID] = sentPoll{question: question, options: options}
+	c.mu.Unlock()
+	return messenger.MessageID(resp.ID), nil
+}
+
+/**
+ * WARNING: Brazilian accounts created before the ninth digit may be registered without it, so a phone number
+ * cannot be turned into a chat ID by hand. WhatsApp's lookup returns the ID the account really uses.
+ */
+func (c *Client) resolve(ctx context.Context, to messenger.Address) (types.JID, error) {
+	normalized := to.Normalize()
+	if normalized == "" {
+		return types.JID{}, errors.New("destino vazio")
+	}
+	if strings.Contains(string(normalized), "@") {
+		return types.ParseJID(string(normalized))
+	}
+	found, err := c.wm.IsOnWhatsApp(ctx, []string{"+" + string(normalized)})
+	if err != nil {
+		return types.JID{}, fmt.Errorf("procurar %s no WhatsApp: %w", normalized, err)
+	}
+	if len(found) == 0 || !found[0].IsIn {
+		return types.JID{}, fmt.Errorf("%s não tem WhatsApp", normalized)
+	}
+	return found[0].JID, nil
+}
+
+func (c *Client) handle(evt any) {
+	switch e := evt.(type) {
+	case *events.Connected:
+		c.once.Do(func() { close(c.connected) })
+		c.log.Info("WhatsApp conectado")
+	case *events.LoggedOut:
+		c.log.Warn("WhatsApp desvinculado pelo celular; rode 'louvadeira whatsapp link' de novo", "motivo", e.Reason.String())
+	case *events.Message:
+		c.handleMessage(e)
+	}
+}
+
+func (c *Client) handleMessage(e *events.Message) {
+	update := e.Message.GetPollUpdateMessage()
+	if update == nil {
+		return
+	}
+	c.mu.Lock()
+	poll, ours := c.polls[types.MessageID(update.GetPollCreationMessageKey().GetID())]
+	c.mu.Unlock()
+	if !ours {
+		return
+	}
+	vote, err := c.wm.DecryptPollVote(context.Background(), e)
+	if err != nil {
+		c.log.Error("não consegui ler o voto", "erro", err)
+		return
+	}
+	c.log.Info("voto recebido",
+		"enquete", poll.question,
+		"quem", e.Info.PushName,
+		"escolha", matchOptions(poll.options, vote.GetSelectedOptions()),
+	)
+}
+
+func (c *Client) waitConnected(ctx context.Context) error {
+	select {
+	case <-c.connected:
+		return nil
+	case <-time.After(connectTimeout):
+		return errors.New("vinculado, mas a conexão não terminou a tempo; reinicie o serviço")
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// NOTE: WhatsApp poll votes carry SHA-256 hashes of the chosen option names, not the names themselves.
+func matchOptions(options []string, selected [][]byte) []string {
+	chosen := make([]string, 0, len(selected))
+	for _, hash := range selected {
+		for _, option := range options {
+			sum := sha256.Sum256([]byte(option))
+			if string(sum[:]) == string(hash) {
+				chosen = append(chosen, option)
+			}
+		}
+	}
+	return chosen
+}
