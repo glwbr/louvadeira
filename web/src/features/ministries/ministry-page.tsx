@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowDown, ArrowLeft, ArrowUp, CalendarClock, ChevronRight, Crown, ListChecks, Pencil, Pin, Plus, Users } from "lucide-react"
+import { ArrowDown, ArrowLeft, ArrowUp, CalendarClock, Crown, ListChecks, Pencil, Pin, Plus, Users } from "lucide-react"
 import { motion } from "motion/react"
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
@@ -9,7 +9,9 @@ import { toast } from "sonner"
 import { EmptyState } from "@/components/empty-state"
 import { ErrorState } from "@/components/error-state"
 import { ListSkeleton } from "@/components/list-skeleton"
-import { Reveal, RevealItem, spring } from "@/components/motion"
+import { Avatar } from "@/components/avatar"
+import { ListCard, ListRow } from "@/components/list"
+import { AnimatedItem, spring } from "@/components/motion"
 import { RoleIcon } from "@/components/role-icon"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -18,7 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ApiError, api, queryKeys, type Member, type MinistryDetail, type Role } from "@/lib/api"
 import { toastError } from "@/lib/errors"
-import { communionLabel, initials, rotationLabel, serviceLabel } from "@/lib/format"
+import { communionLabel, rotationLabel, serviceLabel } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 import { MemberDialog } from "./member-dialog"
@@ -94,19 +96,13 @@ export function MinistryPage() {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="team">
-          <Reveal>
-            <TeamTab ministry={detail} />
-          </Reveal>
+          <TeamTab ministry={detail} />
         </TabsContent>
         <TabsContent value="roles">
-          <Reveal>
-            <RolesTab ministry={detail} />
-          </Reveal>
+          <RolesTab ministry={detail} />
         </TabsContent>
         <TabsContent value="services">
-          <Reveal>
-            <ServicesTab ministry={detail} />
-          </Reveal>
+          <ServicesTab ministry={detail} />
         </TabsContent>
       </Tabs>
 
@@ -161,20 +157,16 @@ function TeamTab({ ministry }: { ministry: MinistryDetail }) {
           {t("ministries.team.empty")}
         </EmptyState>
       ) : (
-        <ul className="flex flex-col divide-y rounded-2xl border bg-card">
-          {ministry.members.map((member, index) => (
-            <RevealItem key={member.personId} index={index}>
-              <button
-                type="button"
+        <ListCard>
+          {ministry.members.map((member) => (
+            <AnimatedItem key={member.personId}>
+              <ListRow
                 onClick={() => openDialog(member)}
-                className="group flex w-full items-start gap-3 px-4 py-3.5 text-left transition-colors hover:bg-accent/40"
-              >
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-secondary-foreground">
-                  {initials(member.name)}
-                </span>
-                <span className="flex min-w-0 flex-1 flex-col gap-2">
+                className="items-start py-3.5 [&>svg:last-child]:mt-3"
+                leading={<Avatar name={member.name} />}
+                title={
                   <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="font-medium text-pretty">{member.name}</span>
+                    {member.name}
                     {member.isLeader && (
                       <Badge variant="brand">
                         <Crown />
@@ -182,8 +174,10 @@ function TeamTab({ ministry }: { ministry: MinistryDetail }) {
                       </Badge>
                     )}
                   </span>
-                  <span className="flex flex-wrap gap-1.5">
-                    {member.roles.length === 0 && <span className="text-sm text-muted-foreground">{t("ministries.team.noRole")}</span>}
+                }
+                subtitle={
+                  <span className="mt-2 flex flex-wrap gap-1.5">
+                    {member.roles.length === 0 && t("ministries.team.noRole")}
                     {member.roles.map((role) => {
                       const name = roleNames.get(role.roleId) ?? ""
                       return (
@@ -195,12 +189,11 @@ function TeamTab({ ministry }: { ministry: MinistryDetail }) {
                       )
                     })}
                   </span>
-                </span>
-                <ChevronRight className="mt-2.5 size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-              </button>
-            </RevealItem>
+                }
+              />
+            </AnimatedItem>
           ))}
-        </ul>
+        </ListCard>
       )}
       {people.data && <MemberDialog open={open} onOpenChange={setOpen} ministry={ministry} member={selected} people={people.data} />}
     </>

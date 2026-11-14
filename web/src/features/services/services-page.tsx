@@ -1,13 +1,15 @@
 import { useQuery } from "@tanstack/react-query"
-import { CalendarClock, ChevronRight, Grape, Plus } from "lucide-react"
+import { CalendarClock, Grape, Plus } from "lucide-react"
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
 
 import { CommunionTag } from "@/components/communion-tag"
 import { EmptyState } from "@/components/empty-state"
-import { ErrorState } from "@/components/error-state"
 import { ListSkeleton } from "@/components/list-skeleton"
-import { RevealItem } from "@/components/motion"
+import { IconTile } from "@/components/icon-tile"
+import { ListCard, ListRow } from "@/components/list"
+import { AnimatedItem } from "@/components/motion"
+import { QueryState } from "@/components/query-state"
 import { PageHeader } from "@/components/page-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -49,9 +51,7 @@ export function ServicesPage() {
 
       {services.data && services.data.length > 0 && (
         <section aria-labelledby="communion" className="mb-6 flex items-center gap-3.5 rounded-2xl border bg-card p-4">
-          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-brand">
-            <Grape className="size-5" />
-          </span>
+          <IconTile icon={Grape} />
           <div className="min-w-0 flex-1">
             <h2 id="communion" className="font-medium">
               {t("services.communion.title")}
@@ -71,45 +71,38 @@ export function ServicesPage() {
         </section>
       )}
 
-      {services.isPending ? (
-        <ListSkeleton />
-      ) : services.isError ? (
-        <ErrorState error={services.error} onRetry={() => void services.refetch()} retrying={services.isFetching} />
-      ) : sorted.length === 0 ? (
-        <EmptyState icon={CalendarClock} title={t("services.emptyTitle")}>
-          {t("services.empty")}
-        </EmptyState>
-      ) : (
-        <ul className="flex flex-col divide-y rounded-2xl border bg-card">
-          {sorted.map((service, index) => (
-            <RevealItem key={service.id} index={index}>
-              <button
-                type="button"
-                onClick={() => openDialog(service)}
-                className="group flex w-full items-center gap-3.5 px-4 py-3.5 text-left transition-colors hover:bg-accent/40"
-              >
-                <span
-                  aria-hidden
-                  className={cn(
-                    "flex w-12 shrink-0 flex-col items-center rounded-xl border bg-background/40 py-1.5 leading-none",
-                    !service.active && "opacity-50"
-                  )}
-                >
-                  <span className="text-[0.6875rem] font-semibold tracking-wide text-brand uppercase">{weekdayShortName(service.weekday)}</span>
-                  <span className="tabular mt-1 text-sm font-semibold">{formatTime(service.startTime)}</span>
-                </span>
-                <span className={cn("min-w-0 flex-1", !service.active && "opacity-60")}>
-                  <span className="block font-medium text-pretty">{service.name}</span>
-                  <span className="block text-sm text-muted-foreground">{serviceLabel(service)}</span>
-                  {communionLabel(service) && <CommunionTag className="mt-1" label={communionLabel(service)} />}
-                </span>
-                {!service.active && <Badge variant="secondary">{t("services.inactive")}</Badge>}
-                <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-              </button>
-            </RevealItem>
-          ))}
-        </ul>
-      )}
+      <QueryState
+        query={services}
+        loading={<ListSkeleton />}
+        isEmpty={(data) => data.length === 0}
+        empty={
+          <EmptyState icon={CalendarClock} title={t("services.emptyTitle")}>
+            {t("services.empty")}
+          </EmptyState>
+        }
+      >
+        {() => (
+          <ListCard>
+            {sorted.map((service) => (
+              <AnimatedItem key={service.id}>
+                <ListRow
+                  onClick={() => openDialog(service)}
+                  className={cn("py-3.5", !service.active && "[&>span:not(:last-of-type)]:opacity-60")}
+                  leading={<WeekdayTile weekday={service.weekday} startTime={service.startTime} />}
+                  title={service.name}
+                  subtitle={
+                    <>
+                      {serviceLabel(service)}
+                      {communionLabel(service) && <CommunionTag className="mt-1 flex w-fit" label={communionLabel(service)} />}
+                    </>
+                  }
+                  trailing={!service.active && <Badge variant="secondary">{t("services.inactive")}</Badge>}
+                />
+              </AnimatedItem>
+            ))}
+          </ListCard>
+        )}
+      </QueryState>
 
       <ServiceDialog open={open} onOpenChange={setOpen} service={editing} />
       <CommunionDialog
@@ -119,5 +112,14 @@ export function ServicesPage() {
         current={communion}
       />
     </>
+  )
+}
+
+function WeekdayTile({ weekday, startTime }: { weekday: number; startTime: string }) {
+  return (
+    <span aria-hidden className="flex w-12 shrink-0 flex-col items-center rounded-xl border bg-background/40 py-1.5 leading-none">
+      <span className="text-[0.6875rem] font-semibold tracking-wide text-brand uppercase">{weekdayShortName(weekday)}</span>
+      <span className="tabular mt-1 text-sm font-semibold">{formatTime(startTime)}</span>
+    </span>
   )
 }

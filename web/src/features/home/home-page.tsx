@@ -6,9 +6,10 @@ import { Link } from "react-router"
 import { CommunionTag } from "@/components/communion-tag"
 import { DateBlock } from "@/components/date-block"
 import { EmptyState } from "@/components/empty-state"
+import { ListRow } from "@/components/list"
 import { ErrorState } from "@/components/error-state"
 import { CardSkeleton } from "@/components/list-skeleton"
-import { Reveal, RevealItem } from "@/components/motion"
+import { AnimatedItem, AnimatedList } from "@/components/motion"
 import { RoleIcon } from "@/components/role-icon"
 import { SlotStatusIcon } from "@/components/slot-status"
 import { Badge } from "@/components/ui/badge"
@@ -28,12 +29,12 @@ export function HomePage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <Reveal>
+      <div>
         <h1 className="font-display text-[2rem] leading-[1.1] font-semibold text-balance">
           {me.data ? t("home.greeting", { name: firstName(me.data.name) }) : <Skeleton className="h-9 w-44" />}
         </h1>
         <p className="mt-1.5 text-sm text-muted-foreground first-letter:uppercase">{longDate(todayISO())}</p>
-      </Reveal>
+      </div>
 
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_19rem] lg:items-start">
         <section aria-labelledby="upcoming" className="flex min-w-0 flex-col gap-3">
@@ -73,7 +74,7 @@ export function HomePage() {
             <h2 id="registry" className="text-lg font-semibold">
               {t("home.registry")}
             </h2>
-            <ul className="divide-y rounded-2xl border bg-card">
+            <ul className="divide-y overflow-hidden rounded-2xl border bg-card">
               <RegistryRow to="/ministerios" icon={Church} label={t("nav.ministries")} count={ministries.data?.length} />
               <RegistryRow to="/pessoas" icon={Users} label={t("nav.people")} count={people.data?.length} />
               <RegistryRow
@@ -158,11 +159,13 @@ function Upcoming({ ministries }: { ministries: Ministry[] }) {
 
   return (
     <ul className="flex flex-col gap-3">
-      {upcoming.map((item, index) => (
-        <RevealItem key={`${item.ministry.id}-${item.service.date}-${item.service.serviceId}`} index={index}>
-          <ServiceCard item={item} showMinistry={ministries.length > 1} />
-        </RevealItem>
-      ))}
+      <AnimatedList>
+        {upcoming.map((item) => (
+          <AnimatedItem key={`${item.ministry.id}-${item.service.date}-${item.service.serviceId}`}>
+            <ServiceCard item={item} showMinistry={ministries.length > 1} />
+          </AnimatedItem>
+        ))}
+      </AnimatedList>
     </ul>
   )
 }
@@ -242,16 +245,12 @@ function UpcomingSkeleton() {
 function RegistryRow({ to, icon: Icon, label, count }: { to: string; icon: LucideIcon; label: string; count?: number }) {
   return (
     <li>
-      <Link to={to} className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/40">
-        <Icon className="size-5 text-brand" />
-        <span className="flex-1 font-medium">{label}</span>
-        {count === undefined ? (
-          <Skeleton className="h-4 w-6" />
-        ) : (
-          <span className="tabular text-sm text-muted-foreground">{count}</span>
-        )}
-        <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-      </Link>
+      <ListRow
+        to={to}
+        leading={<Icon className="size-5 text-brand" aria-hidden />}
+        title={label}
+        trailing={count === undefined ? <Skeleton className="h-4 w-6" /> : <span className="tabular text-sm text-muted-foreground">{count}</span>}
+      />
     </li>
   )
 }

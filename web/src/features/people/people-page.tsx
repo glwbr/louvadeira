@@ -1,20 +1,22 @@
 import { useStore } from "@tanstack/react-form"
 import { useQuery } from "@tanstack/react-query"
-import { ChevronRight, Plus, Search, SearchX, ShieldCheck, Users, X } from "lucide-react"
+import { Plus, Search, SearchX, ShieldCheck, Users, X } from "lucide-react"
 import { useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 
 import { EmptyState } from "@/components/empty-state"
 import { useAppForm } from "@/components/form"
-import { ErrorState } from "@/components/error-state"
 import { ListSkeleton } from "@/components/list-skeleton"
-import { RevealItem } from "@/components/motion"
+import { Avatar } from "@/components/avatar"
+import { ListCard, ListRow } from "@/components/list"
+import { AnimatedItem } from "@/components/motion"
+import { QueryState } from "@/components/query-state"
 import { PageHeader } from "@/components/page-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { api, queryKeys, type Person } from "@/lib/api"
-import { formatPhone, initials } from "@/lib/format"
+import { formatPhone } from "@/lib/format"
 
 import { PersonDialog } from "./person-dialog"
 
@@ -83,54 +85,53 @@ export function PeoplePage() {
         </div>
       )}
 
-      {people.isPending ? (
-        <ListSkeleton rows={5} />
-      ) : people.isError ? (
-        <ErrorState error={people.error} onRetry={() => void people.refetch()} retrying={people.isFetching} />
-      ) : people.data.length === 0 ? (
-        <EmptyState icon={Users} title={t("people.emptyTitle")}>
-          {t("people.empty")}
-        </EmptyState>
-      ) : filtered.length === 0 ? (
-        <EmptyState
-          icon={SearchX}
-          title={t("people.noMatchTitle", { term: search.trim() })}
-          action={
-            <Button variant="outline" onClick={() => setSearch("")}>
-              {t("people.clearSearch")}
-            </Button>
-          }
-        >
-          {t("people.noMatch")}
-        </EmptyState>
-      ) : (
-        <ul className="flex flex-col divide-y rounded-2xl border bg-card">
-          {filtered.map((person, index) => (
-            <RevealItem key={person.id} index={index}>
-              <button
-                type="button"
-                onClick={() => openDialog(person)}
-                className="group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40"
-              >
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-secondary-foreground">
-                  {initials(person.name)}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="line-clamp-2 font-medium text-pretty">{person.name}</span>
-                  <span className="tabular block text-sm text-muted-foreground">{formatPhone(person.phone) || t("people.noWhatsApp")}</span>
-                </span>
-                {person.isAdmin && (
-                  <Badge variant="brand">
-                    <ShieldCheck />
-                    {t("people.admin")}
-                  </Badge>
-                )}
-                <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-              </button>
-            </RevealItem>
-          ))}
-        </ul>
-      )}
+      <QueryState
+        query={people}
+        loading={<ListSkeleton rows={5} />}
+        isEmpty={(data) => data.length === 0}
+        empty={
+          <EmptyState icon={Users} title={t("people.emptyTitle")}>
+            {t("people.empty")}
+          </EmptyState>
+        }
+      >
+        {() =>
+          filtered.length === 0 ? (
+            <EmptyState
+              icon={SearchX}
+              title={t("people.noMatchTitle", { term: search.trim() })}
+              action={
+                <Button variant="outline" onClick={() => setSearch("")}>
+                  {t("people.clearSearch")}
+                </Button>
+              }
+            >
+              {t("people.noMatch")}
+            </EmptyState>
+          ) : (
+            <ListCard>
+              {filtered.map((person) => (
+                <AnimatedItem key={person.id}>
+                  <ListRow
+                    onClick={() => openDialog(person)}
+                    leading={<Avatar name={person.name} />}
+                    title={<span className="line-clamp-2">{person.name}</span>}
+                    subtitle={<span className="tabular">{formatPhone(person.phone) || t("people.noWhatsApp")}</span>}
+                    trailing={
+                      person.isAdmin && (
+                        <Badge variant="brand">
+                          <ShieldCheck />
+                          {t("people.admin")}
+                        </Badge>
+                      )
+                    }
+                  />
+                </AnimatedItem>
+              ))}
+            </ListCard>
+          )
+        }
+      </QueryState>
 
       <PersonDialog open={open} onOpenChange={setOpen} person={editing} canArchive={editing?.id !== me.data?.id} />
     </>

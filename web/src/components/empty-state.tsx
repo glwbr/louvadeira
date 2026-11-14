@@ -1,7 +1,6 @@
 import type { LucideIcon } from "lucide-react"
 import type { ReactNode } from "react"
 
-import { Reveal } from "@/components/motion"
 import { cn } from "@/lib/utils"
 
 type Props = {
@@ -15,7 +14,7 @@ type Props = {
 
 export function EmptyState({ icon: Icon, title, children, action, tone = "brand", className }: Props) {
   return (
-    <Reveal
+    <div
       className={cn(
         "flex flex-col items-center gap-3 rounded-2xl border border-dashed px-6 py-10 text-center",
         tone === "danger" && "border-danger/30",
@@ -33,6 +32,6 @@ export function EmptyState({ icon: Icon, title, children, action, tone = "brand"
       <p className="font-medium text-balance">{title}</p>
       {children && <div className="max-w-sm text-sm text-pretty text-muted-foreground">{children}</div>}
       {action && <div className="mt-2">{action}</div>}
-    </Reveal>
+    </div>
   )
 }

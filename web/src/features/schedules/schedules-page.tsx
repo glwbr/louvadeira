@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ArrowLeftRight,
   CalendarDays,
@@ -14,7 +14,6 @@ import {
   Sparkles,
   Trash2,
   TriangleAlert,
-  X,
 } from "lucide-react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { useState } from "react"
@@ -28,8 +27,11 @@ import { DateBlock } from "@/components/date-block"
 import { EmptyState } from "@/components/empty-state"
 import { ErrorState } from "@/components/error-state"
 import { CardSkeleton, ListSkeleton } from "@/components/list-skeleton"
-import { quick, Reveal, RevealItem, staggerDelay } from "@/components/motion"
+import { AnimatedItem, quick, Swap } from "@/components/motion"
+import { Avatar } from "@/components/avatar"
+import { ListCard } from "@/components/list"
 import { PageHeader } from "@/components/page-header"
+import { SectionHeader } from "@/components/section-header"
 import { RoleIcon } from "@/components/role-icon"
 import { SlotStatusIcon } from "@/components/slot-status"
 import { Badge } from "@/components/ui/badge"
@@ -54,7 +56,6 @@ import {
   dayAndTime,
   firstName,
   formatDay,
-  initials,
   monthBounds,
   monthLabel,
   nextMonth,
@@ -67,6 +68,7 @@ import {
 } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
+import { AbsenceRow } from "./absence-row"
 import { SlotDialog, type SlotSelection } from "./slot-dialog"
 import { UnavailabilityDialog } from "./unavailability-dialog"
 
@@ -141,7 +143,7 @@ export function SchedulesPage() {
         }
       />
       <MonthPager month={month} direction={direction} onGo={go} />
-      <ScheduleBoard key={`${ministryId}-${month}`} ministryId={ministryId} month={month} direction={direction} />
+      <ScheduleBoard ministryId={ministryId} month={month} direction={direction} />
     </>
   )
 }
@@ -153,20 +155,10 @@ function MonthPager({ month, direction, onGo }: { month: string; direction: numb
       <Button variant="ghost" size="icon" aria-label={t("schedules.previousMonth")} onClick={() => onGo(-1)}>
         <ChevronLeft />
       </Button>
-      <div className="relative flex h-10 flex-1 items-center justify-center overflow-hidden" aria-live="polite">
-        <AnimatePresence mode="popLayout" initial={false} custom={direction}>
-          <motion.span
-            key={month}
-            custom={direction}
-            initial={{ opacity: 0, x: direction * 28 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: direction * -28 }}
-            transition={quick}
-            className="font-display text-lg font-semibold"
-          >
-            {monthLabel(month)}
-          </motion.span>
-        </AnimatePresence>
+      <div className="flex h-10 flex-1 items-center justify-center overflow-hidden" aria-live="polite">
+        <Swap id={month} direction={direction}>
+          <span className="font-display text-lg font-semibold">{monthLabel(month)}</span>
+        </Swap>
       </div>
       <Button variant="ghost" size="icon" aria-label={t("schedules.nextMonth")} onClick={() => onGo(1)}>
         <ChevronRight />
@@ -188,15 +180,22 @@ function BoardSkeleton() {
 function ScheduleBoard({ ministryId, month, direction }: { ministryId: number; month: string; direction: number }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const ministry = useQuery({ queryKey: queryKeys.ministry(ministryId), queryFn: () => api.ministries.get(ministryId) })
+  const ministry = useQuery({
+    queryKey: queryKeys.ministry(ministryId),
+    queryFn: () => api.ministries.get(ministryId),
+    placeholderData: keepPreviousData,
+  })
+  // NOTE: Keeping the previous month on screen while the next one loads avoids a skeleton between months.
   const schedule = useQuery({
     queryKey: queryKeys.schedule(ministryId, month),
     queryFn: () => api.schedules.get(ministryId, month),
+    placeholderData: keepPreviousData,
   })
-  const range = scheduleRange(schedule.data) ?? monthBounds(month)
+  const range = monthBounds(month)
   const unavailabilities = useQuery({
     queryKey: queryKeys.unavailabilities(range.from, range.to),
     queryFn: () => api.unavailabilities.list(range.from, range.to),
+    placeholderData: keepPreviousData,
   })
   const [selection, setSelection] = useState<SlotSelection | undefined>()
 
@@ -212,36 +211,48 @@ function ScheduleBoard({ ministryId, month, direction }: { ministryId: number; m
   const missing = schedule.error instanceof ApiError && schedule.error.status === 404
   const members = new Set(ministry.data?.members.map((member) => member.personId))
   const absences = (unavailabilities.data ?? []).filter((u) => members.has(u.personId))
+  const stale = schedule.isPlaceholderData || ministry.isPlaceholderData
+  const view = schedule.data
+  const state =
+    (schedule.isPending && !view) || (ministry.isPending && !ministry.data)
+      ? "loading"
+      : missing
+        ? `empty-${ministryId}-${month}`
+        : schedule.isError || ministry.isError
+          ? "error"
+          : `board-${view?.ministryId}-${view?.month}`
 
   return (
-    <motion.div
-      initial={{ opacity: 0, x: direction * 24 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={quick}
-      className="flex flex-col gap-8"
-    >
-      {schedule.isPending || ministry.isPending ? (
-        <BoardSkeleton />
-      ) : missing ? (
-        <EmptyMonth ministry={ministry.data} month={month} generating={generate.isPending} onGenerate={() => generate.mutate()} />
-      ) : schedule.isError || ministry.isError ? (
-        <ErrorState
-          error={schedule.error ?? ministry.error}
-          onRetry={() => {
-            void schedule.refetch()
-            void ministry.refetch()
-          }}
-          retrying={schedule.isFetching || ministry.isFetching}
-        />
-      ) : (
-        <Board view={schedule.data} ministry={ministry.data} month={month} onSelect={setSelection} onRegenerate={() => generate.mutate()} regenerating={generate.isPending} />
-      )}
+    <div className="flex flex-col gap-8">
+      <div className={cn("transition-opacity duration-200", stale && "pointer-events-none opacity-50")} aria-busy={stale}>
+        <Swap id={state} direction={direction}>
+          {state === "loading" ? (
+            <BoardSkeleton />
+          ) : missing ? (
+            <EmptyMonth ministry={ministry.data} month={month} generating={generate.isPending} onGenerate={() => generate.mutate()} />
+          ) : state === "error" ? (
+            <ErrorState
+              error={schedule.error ?? ministry.error}
+              onRetry={() => {
+                void schedule.refetch()
+                void ministry.refetch()
+              }}
+              retrying={schedule.isFetching || ministry.isFetching}
+            />
+          ) : (
+            view &&
+            ministry.data && (
+              <Board view={view} ministry={ministry.data} month={view.month} onSelect={setSelection} onRegenerate={() => generate.mutate()} regenerating={generate.isPending} />
+            )
+          )}
+        </Swap>
+      </div>
 
       {schedule.data?.status === "published" && <CoversCard ministryId={ministryId} month={month} />}
 
       <AbsencesCard
         list={absences}
-        loading={unavailabilities.isPending || ministry.isPending}
+        loading={(unavailabilities.isPending && !unavailabilities.data) || (ministry.isPending && !ministry.data)}
         error={unavailabilities.isError ? unavailabilities.error : null}
         onRetry={() => void unavailabilities.refetch()}
         defaultDate={range.from}
@@ -252,12 +263,12 @@ function ScheduleBoard({ ministryId, month, direction }: { ministryId: number; m
           selection={selection}
           onClose={() => setSelection(undefined)}
           ministry={ministry.data}
-          month={month}
-          published={schedule.data?.status === "published"}
+          month={view?.month ?? month}
+          published={view?.status === "published"}
           unavailabilities={unavailabilities.data ?? []}
         />
       )}
-    </motion.div>
+    </div>
   )
 }
 
@@ -347,8 +358,8 @@ function Board({
         {published && view.warnings > 0 && <WarningJump count={view.warnings} />}
       </div>
 
-      {view.weeks.map((week, index) => (
-        <Reveal key={week.start} delay={staggerDelay(index)}>
+      {view.weeks.map((week) => (
+        <div key={week.start}>
           <section aria-labelledby={`week-${week.start}`} className="overflow-hidden rounded-2xl border bg-card">
             <h2
               id={`week-${week.start}`}
@@ -368,10 +379,23 @@ function Board({
               ))}
             </div>
           </section>
-        </Reveal>
+        </div>
       ))}
 
-      {!published && <DraftBar view={view} ministry={ministry} month={month} onRegenerate={onRegenerate} regenerating={regenerating} />}
+      <AnimatePresence initial={false}>
+        {!published && (
+          <motion.div
+            key="draft-bar"
+            className="sticky bottom-[calc(4.25rem+env(safe-area-inset-bottom)+0.75rem)] z-10 lg:bottom-6"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16, transition: { duration: 0.2 } }}
+            transition={quick}
+          >
+            <DraftBar view={view} ministry={ministry} month={month} onRegenerate={onRegenerate} regenerating={regenerating} />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -542,7 +566,7 @@ function DraftBar({
   })
 
   return (
-    <div className="sticky bottom-[calc(4.25rem+env(safe-area-inset-bottom)+0.75rem)] z-10 lg:bottom-6">
+    <div>
       <div className="flex items-center gap-1.5 rounded-2xl border bg-popover/95 p-2 pl-3 shadow-[0_16px_40px_oklch(0_0_0/0.45)] backdrop-blur-md">
         {pending.length > 0 ? (
           <button
@@ -651,16 +675,17 @@ function AbsencesCard({
 
   return (
     <section aria-labelledby="absences" className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <h2 id="absences" className="flex items-center gap-2 text-lg font-semibold">
-          <CalendarOff className="size-5 text-brand" />
-          {t("schedules.absences")}
-        </h2>
-        <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
-          <Plus />
-          {t("schedules.addAbsence")}
-        </Button>
-      </div>
+      <SectionHeader
+        id="absences"
+        title={t("schedules.absences")}
+        icon={CalendarOff}
+        action={
+          <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+            <Plus />
+            {t("schedules.addAbsence")}
+          </Button>
+        }
+      />
       {loading ? (
         <ListSkeleton rows={2} />
       ) : error ? (
@@ -668,41 +693,32 @@ function AbsencesCard({
       ) : list.length === 0 ? (
         <p className="rounded-2xl border border-dashed px-4 py-5 text-sm text-pretty text-muted-foreground">{t("schedules.absencesEmpty")}</p>
       ) : (
-        <ul className="divide-y rounded-2xl border bg-card">
-          {list.map((u, index) => (
-            <RevealItem key={u.id} index={index} className="flex flex-col gap-2 px-4 py-3">
-              <div className="flex items-center gap-3">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-secondary-foreground">
-                  {initials(u.personName)}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">{u.personName}</p>
-                  <p className="text-xs text-pretty text-muted-foreground">
-                    {absenceLabel(u)} · {u.fromPoll ? t("schedules.fromPoll") : reasonLabel(u.reason)}
-                  </p>
-                </div>
-                <ConfirmButton
-                  size="icon-sm"
-                  icon={<X />}
-                  label={null}
-                  aria-label={t("schedules.removeAbsenceLabel", { name: u.personName })}
-                  confirmLabel={t("schedules.removeAbsence")}
-                  title={t("schedules.removeAbsenceTitle", { name: firstName(u.personName) })}
-                  description={t("schedules.removeAbsenceLead", { label: absenceLabel(u) })}
-                  onConfirm={() => remove.mutate(u.id)}
-                  pending={remove.isPending && remove.variables === u.id}
-                  className="text-muted-foreground hover:text-danger"
-                />
-              </div>
-              {u.scheduled > 0 && (
-                <Button size="sm" variant="outline" className="self-start sm:ml-12" onClick={() => setSwapsFor(u)}>
-                  <ArrowLeftRight />
-                  {u.scheduled === 1 ? t("schedules.findCover") : t("schedules.findCovers", { count: u.scheduled })}
-                </Button>
-              )}
-            </RevealItem>
+        <ListCard>
+          {list.map((u) => (
+            <AbsenceRow
+              key={u.id}
+              leading={<Avatar name={u.personName} className="size-9 text-xs" />}
+              title={u.personName}
+              subtitle={`${absenceLabel(u)} · ${u.fromPoll ? t("schedules.fromPoll") : reasonLabel(u.reason)}`}
+              cover={
+                u.scheduled > 0
+                  ? {
+                      label: u.scheduled === 1 ? t("schedules.findCover") : t("schedules.findCovers", { count: u.scheduled }),
+                      onClick: () => setSwapsFor(u),
+                    }
+                  : undefined
+              }
+              remove={{
+                label: t("schedules.removeAbsenceLabel", { name: u.personName }),
+                confirmLabel: t("schedules.removeAbsence"),
+                title: t("schedules.removeAbsenceTitle", { name: firstName(u.personName) }),
+                description: t("schedules.removeAbsenceLead", { label: absenceLabel(u) }),
+                onConfirm: () => remove.mutate(u.id),
+                pending: remove.isPending && remove.variables === u.id,
+              }}
+            />
           ))}
-        </ul>
+        </ListCard>
       )}
       <UnavailabilityDialog open={open} onOpenChange={setOpen} defaultDate={defaultDate} />
       <UnavailabilityDialog
@@ -713,14 +729,6 @@ function AbsencesCard({
       />
     </section>
   )
-}
-
-function scheduleRange(view?: ScheduleView): { from: string; to: string } | undefined {
-  const dates = view?.weeks.flatMap((week) => week.services.map((service) => service.date)) ?? []
-  if (dates.length === 0) {
-    return undefined
-  }
-  return { from: dates[0], to: dates[dates.length - 1] }
 }
 
 const COVER_BADGE = { open: "warning", covered: "success", uncovered: "destructive" } as const
@@ -738,20 +746,17 @@ function CoversCard({ ministryId, month }: { ministryId: number; month: string }
   }
   return (
     <section aria-labelledby="covers" className="flex flex-col gap-3">
-      <h2 id="covers" className="flex items-center gap-2 text-lg font-semibold">
-        <ArrowLeftRight className="size-5 text-brand" />
-        {t("schedules.covers")}
-      </h2>
-      <ul className="divide-y rounded-2xl border bg-card">
-        {covers.data.map((cover, index) => (
-          <CoverItem key={cover.id} cover={cover} index={index} />
+      <SectionHeader id="covers" title={t("schedules.covers")} icon={ArrowLeftRight} />
+      <ListCard>
+        {covers.data.map((cover) => (
+          <CoverItem key={cover.id} cover={cover} />
         ))}
-      </ul>
+      </ListCard>
     </section>
   )
 }
 
-function CoverItem({ cover, index }: { cover: CoverRequest; index: number }) {
+function CoverItem({ cover }: { cover: CoverRequest }) {
   const { t } = useTranslation()
   const answers = cover.invites.map((invite) =>
     invite.answer === "no"
@@ -761,7 +766,7 @@ function CoverItem({ cover, index }: { cover: CoverRequest; index: number }) {
         : firstName(invite.name)
   )
   return (
-    <RevealItem index={index} className="flex flex-col gap-1.5 px-4 py-3">
+    <AnimatedItem className="flex flex-col gap-1.5 px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-medium">
           {weekdayOf(cover.date)}, {formatDay(cover.date)} · {cover.roleName}
@@ -775,6 +780,6 @@ function CoverItem({ cover, index }: { cover: CoverRequest; index: number }) {
         {cover.status !== "covered" && answers.length > 0 && ` ${t("schedules.coverInvited", { names: answers.join(", ") })}`}
         {cover.status !== "covered" && answers.length === 0 && ` ${t("schedules.coverNobody")}`}
       </p>
-    </RevealItem>
+    </AnimatedItem>
   )
 }

@@ -1,10 +1,8 @@
 import { LayoutDashboard } from "lucide-react"
-import { motion } from "motion/react"
 import { useTranslation } from "react-i18next"
 import { Link, Outlet } from "react-router"
 
 import { Wordmark } from "@/components/brand"
-import { quick } from "@/components/motion"
 import { ActivityBar, SignOutButton } from "@/components/shell-parts"
 import { Button } from "@/components/ui/button"
 import type { Person } from "@/lib/api"
@@ -30,14 +28,9 @@ export function MemberShell({ me }: { me: Person }) {
           </div>
         </div>
       </header>
-      <motion.main
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={quick}
-        className="mx-auto max-w-2xl px-4 pt-6 pb-8"
-      >
+      <main className="mx-auto max-w-2xl px-4 pt-6 pb-8">
         <Outlet />
-      </motion.main>
+      </main>
     </div>
   )
 }

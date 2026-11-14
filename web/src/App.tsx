@@ -8,18 +8,33 @@ import { RequireAdmin } from "@/components/require-admin"
 import { RequireSignedIn } from "@/components/require-signed-in"
 import { Skeleton } from "@/components/ui/skeleton"
 
+const screens = {
+  signIn: () => import("@/features/auth/sign-in-page").then((m) => ({ default: m.SignInPage })),
+  home: () => import("@/features/home/home-page").then((m) => ({ default: m.HomePage })),
+  member: () => import("@/features/member/member-page").then((m) => ({ default: m.MemberPage })),
+  ministries: () => import("@/features/ministries/ministries-page").then((m) => ({ default: m.MinistriesPage })),
+  ministry: () => import("@/features/ministries/ministry-page").then((m) => ({ default: m.MinistryPage })),
+  people: () => import("@/features/people/people-page").then((m) => ({ default: m.PeoplePage })),
+  schedules: () => import("@/features/schedules/schedules-page").then((m) => ({ default: m.SchedulesPage })),
+  services: () => import("@/features/services/services-page").then((m) => ({ default: m.ServicesPage })),
+}
+
 /**
- * TRADEOFF: Each screen loads on demand, so a member opening their link from WhatsApp does not download the leader's
- * screens first; the service worker still caches them all for offline use afterwards.
+ * TRADEOFF: Each screen is its own file, so a member opening their link from WhatsApp gets their page first. Once the
+ * app is idle the other screens download in the background, so moving between tabs never waits on a file.
  */
-const SignInPage = lazy(() => import("@/features/auth/sign-in-page").then((m) => ({ default: m.SignInPage })))
-const HomePage = lazy(() => import("@/features/home/home-page").then((m) => ({ default: m.HomePage })))
-const MemberPage = lazy(() => import("@/features/member/member-page").then((m) => ({ default: m.MemberPage })))
-const MinistriesPage = lazy(() => import("@/features/ministries/ministries-page").then((m) => ({ default: m.MinistriesPage })))
-const MinistryPage = lazy(() => import("@/features/ministries/ministry-page").then((m) => ({ default: m.MinistryPage })))
-const PeoplePage = lazy(() => import("@/features/people/people-page").then((m) => ({ default: m.PeoplePage })))
-const SchedulesPage = lazy(() => import("@/features/schedules/schedules-page").then((m) => ({ default: m.SchedulesPage })))
-const ServicesPage = lazy(() => import("@/features/services/services-page").then((m) => ({ default: m.ServicesPage })))
+const SignInPage = lazy(screens.signIn)
+const HomePage = lazy(screens.home)
+const MemberPage = lazy(screens.member)
+const MinistriesPage = lazy(screens.ministries)
+const MinistryPage = lazy(screens.ministry)
+const PeoplePage = lazy(screens.people)
+const SchedulesPage = lazy(screens.schedules)
+const ServicesPage = lazy(screens.services)
+
+const whenIdle = (task: () => void) =>
+  typeof requestIdleCallback === "function" ? requestIdleCallback(task, { timeout: 3000 }) : setTimeout(task, 1500)
+whenIdle(() => Object.values(screens).forEach((load) => void load()))
 
 function Page({ children }: { children: ReactNode }) {
   return (

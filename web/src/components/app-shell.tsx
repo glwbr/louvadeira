@@ -1,10 +1,10 @@
 import { CalendarClock, CalendarDays, Church, Home, Users, type LucideIcon } from "lucide-react"
 import { motion } from "motion/react"
 import { useTranslation } from "react-i18next"
-import { Link, NavLink, Outlet, useLocation } from "react-router"
+import { Link, NavLink, Outlet } from "react-router"
 
 import { Wordmark } from "@/components/brand"
-import { quick, spring } from "@/components/motion"
+import { spring } from "@/components/motion"
 import { ActivityBar, SignOutButton } from "@/components/shell-parts"
 import { cn } from "@/lib/utils"
 
@@ -20,7 +20,6 @@ const NAV: NavItem[] = [
 
 export function AppShell() {
   const { t } = useTranslation()
-  const { pathname } = useLocation()
 
   return (
     <div className="min-h-svh pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-12">
@@ -56,15 +55,9 @@ export function AppShell() {
         </div>
       </header>
 
-      <motion.main
-        key={pathname}
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={quick}
-        className="mx-auto max-w-3xl px-4 pt-6 pb-8 lg:max-w-4xl lg:pt-10"
-      >
+      <main className="mx-auto max-w-3xl px-4 pt-6 pb-8 lg:max-w-4xl lg:pt-10">
         <Outlet />
-      </motion.main>
+      </main>
 
       <nav
         aria-label={t("nav.label")}

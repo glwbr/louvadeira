@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeftRight, CalendarDays, CalendarOff, Check, Hourglass, Loader2, Plus, X } from "lucide-react"
+import { CalendarDays, CalendarOff, Check, Hourglass, Loader2, Plus } from "lucide-react"
 import { AnimatePresence, motion } from "motion/react"
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
@@ -10,15 +10,21 @@ import { ConfirmButton } from "@/components/confirm-button"
 import { DateBlock } from "@/components/date-block"
 import { EmptyState } from "@/components/empty-state"
 import { ErrorState } from "@/components/error-state"
+import { IconTile } from "@/components/icon-tile"
+import { ListCard } from "@/components/list"
+import { QueryState } from "@/components/query-state"
+import { SectionHeader } from "@/components/section-header"
 import { CardSkeleton, ListSkeleton } from "@/components/list-skeleton"
-import { EASE_OUT, quick, Reveal, RevealItem, spring } from "@/components/motion"
+import { AnimatedItem, AnimatedList, EASE_OUT, quick, spring } from "@/components/motion"
 import { RoleIcon } from "@/components/role-icon"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { api, queryKeys, type MemberSlot, type Unavailability } from "@/lib/api"
+import { api, queryKeys, type AssignmentStatus, type MemberSlot, type Unavailability } from "@/lib/api"
 import { toastError } from "@/lib/errors"
 import { absenceLabel, firstName, formatDay, reasonLabel, weekdayOf } from "@/lib/format"
 import { cn } from "@/lib/utils"
+
+import { AbsenceRow } from "@/features/schedules/absence-row"
 
 import { MyAbsenceDialog } from "./my-absence-dialog"
 
@@ -65,37 +71,44 @@ export function MemberPage() {
 
   return (
     <div className="flex flex-col gap-10">
-      <Reveal>
+      <div>
         <h1 className="font-display text-[2rem] leading-[1.1] font-semibold text-balance">
           {me.data ? t("member.greeting", { name: firstName(me.data.name) }) : <Skeleton className="h-9 w-44" />}
         </h1>
         <p className="mt-2 max-w-prose text-sm text-pretty text-muted-foreground">{t("member.lead")}</p>
-      </Reveal>
+      </div>
 
       <section aria-labelledby="my-services" className="flex flex-col gap-3">
         <h2 id="my-services" className="text-lg font-semibold">
           {t("member.upcoming")}
         </h2>
-        {slots.isPending ? (
-          <div className="flex flex-col gap-3">
-            <CardSkeleton />
-            <CardSkeleton />
-          </div>
-        ) : slots.isError ? (
-          <ErrorState error={slots.error} onRetry={() => void slots.refetch()} retrying={slots.isFetching} />
-        ) : slots.data.length === 0 ? (
-          <EmptyState icon={CalendarDays} title={t("member.emptyTitle")}>
-            {t("member.empty")}
-          </EmptyState>
-        ) : (
-          <ul className="flex flex-col gap-3">
-            {groupByService(slots.data).map((service, index) => (
-              <RevealItem key={service.key} index={index} layout="position">
-                <ServiceCard service={service} />
-              </RevealItem>
-            ))}
-          </ul>
-        )}
+        <QueryState
+          query={slots}
+          loading={
+            <div className="flex flex-col gap-3">
+              <CardSkeleton />
+              <CardSkeleton />
+            </div>
+          }
+          isEmpty={(data) => data.length === 0}
+          empty={
+            <EmptyState icon={CalendarDays} title={t("member.emptyTitle")}>
+              {t("member.empty")}
+            </EmptyState>
+          }
+        >
+          {(data) => (
+            <ul className="flex flex-col gap-3">
+              <AnimatedList>
+                {groupByService(data).map((service) => (
+                  <AnimatedItem key={service.key}>
+                    <ServiceCard service={service} />
+                  </AnimatedItem>
+                ))}
+              </AnimatedList>
+            </ul>
+          )}
+        </QueryState>
       </section>
 
       <AbsencesSection
@@ -122,23 +135,39 @@ function ServiceCard({ service }: { service: Service }) {
   const searching = service.slots.some((slot) => slot.coverOpen)
   const day = `${weekdayOf(service.date).toLowerCase()}, ${formatDay(service.date)}`
 
+  /**
+   * NOTE: The answer shows on the card at once and the server catches up behind it; if it fails, the card goes back
+   * to how it was and the error says why.
+   */
+  const answer = (status: AssignmentStatus) => async () => {
+    await queryClient.cancelQueries({ queryKey: queryKeys.mySlots })
+    const previous = queryClient.getQueryData<MemberSlot[]>(queryKeys.mySlots)
+    queryClient.setQueryData<MemberSlot[]>(queryKeys.mySlots, (slots) =>
+      slots?.map((slot) => (ids.includes(slot.assignmentId) ? { ...slot, status } : slot))
+    )
+    return { previous }
+  }
+  const rollback = (error: Error, _: unknown, context?: { previous?: MemberSlot[] }) => {
+    queryClient.setQueryData(queryKeys.mySlots, context?.previous)
+    toastError(error)
+  }
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["mine"] })
   const confirm = useMutation({
     mutationFn: () => api.mine.confirm(ids),
-    onSuccess: () => {
-      toast.success(declined ? t("member.back") : t("member.confirmed"))
-      refresh()
-    },
-    onError: toastError,
+    onMutate: answer("confirmed"),
+    onSuccess: () => toast.success(declined ? t("member.back") : t("member.confirmed")),
+    onError: rollback,
+    onSettled: refresh,
   })
   const decline = useMutation({
     mutationFn: () => api.mine.decline(ids.filter((_, i) => service.slots[i].status !== "declined")),
+    onMutate: answer("declined"),
     onSuccess: (requests) => {
       const invited = requests.some((request) => request.invites.length > 0)
       toast.success(invited ? t("member.declinedSearching") : t("member.declinedNobody"))
-      refresh()
     },
-    onError: toastError,
+    onError: rollback,
+    onSettled: refresh,
   })
 
   return (
@@ -288,15 +317,16 @@ function AbsencesSection({
 
   return (
     <section aria-labelledby="my-absences" className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <h2 id="my-absences" className="text-lg font-semibold">
-          {t("member.absences")}
-        </h2>
-        <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
-          <Plus />
-          {t("member.addAbsence")}
-        </Button>
-      </div>
+      <SectionHeader
+        id="my-absences"
+        title={t("member.absences")}
+        action={
+          <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
+            <Plus />
+            {t("member.addAbsence")}
+          </Button>
+        }
+      />
       {loading ? (
         <ListSkeleton rows={1} />
       ) : error ? (
@@ -304,39 +334,25 @@ function AbsencesSection({
       ) : !absences?.length ? (
         <p className="rounded-2xl border border-dashed px-4 py-5 text-sm text-pretty text-muted-foreground">{t("member.absencesEmpty")}</p>
       ) : (
-        <ul className="divide-y rounded-2xl border bg-card">
-          {absences.map((u, index) => (
-            <RevealItem key={u.id} index={index} className="flex flex-col gap-2 px-4 py-3">
-              <div className="flex items-center gap-3">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-brand">
-                  <CalendarOff className="size-4" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-pretty">{absenceLabel(u)}</p>
-                  <p className="text-xs text-muted-foreground">{u.fromPoll ? t("member.fromPoll") : reasonLabel(u.reason)}</p>
-                </div>
-                <ConfirmButton
-                  size="icon-sm"
-                  icon={<X />}
-                  label={null}
-                  className="text-muted-foreground hover:text-danger"
-                  aria-label={t("member.removeLabel", { label: absenceLabel(u) })}
-                  confirmLabel={t("member.remove")}
-                  title={t("member.removeTitle")}
-                  description={t("member.removeLead", { label: absenceLabel(u) })}
-                  onConfirm={() => remove.mutate(u.id)}
-                  pending={remove.isPending && remove.variables === u.id}
-                />
-              </div>
-              {u.scheduled > 0 && (
-                <Button size="sm" variant="outline" className="self-start sm:ml-12" onClick={() => setCoversFor(u)}>
-                  <ArrowLeftRight />
-                  {t("member.findCover")}
-                </Button>
-              )}
-            </RevealItem>
+        <ListCard>
+          {absences.map((u) => (
+            <AbsenceRow
+              key={u.id}
+              leading={<IconTile icon={CalendarOff} className="size-9 [&>svg]:size-4" />}
+              title={absenceLabel(u)}
+              subtitle={u.fromPoll ? t("member.fromPoll") : reasonLabel(u.reason)}
+              cover={u.scheduled > 0 ? { label: t("member.findCover"), onClick: () => setCoversFor(u) } : undefined}
+              remove={{
+                label: t("member.removeLabel", { label: absenceLabel(u) }),
+                confirmLabel: t("member.remove"),
+                title: t("member.removeTitle"),
+                description: t("member.removeLead", { label: absenceLabel(u) }),
+                onConfirm: () => remove.mutate(u.id),
+                pending: remove.isPending && remove.variables === u.id,
+              }}
+            />
           ))}
-        </ul>
+        </ListCard>
       )}
       <MyAbsenceDialog open={adding} onOpenChange={setAdding} />
       <MyAbsenceDialog open={Boolean(coversFor)} onOpenChange={(next) => !next && setCoversFor(undefined)} absence={coversFor} />
