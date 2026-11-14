@@ -340,10 +340,10 @@ func (b *Bot) acceptCovers(ctx context.Context, substitute store.Person, request
 		list := byHandover[k]
 		absent, d := list[0].Absent, list[0].Assignment
 		b.send(ctx, absent.Phone, replacedNotice(absent.Name, substitute.Name, slotTexts(list)))
-		swap := swapAnnouncement(d.MinistryName, substitute.Name, absent.Name, slotTexts(list))
-		b.tellLeaders(ctx, d.MinistryID, swap)
+		b.tellLeaders(ctx, d.MinistryID, swapAnnouncement(d.MinistryName, substitute.Name, absent.Name, slotTexts(list)))
 		if d.WhatsAppGroup != "" {
-			b.send(ctx, d.WhatsAppGroup, swap)
+			text := swapAnnouncement(d.MinistryName, mentionOf(substitute), mentionOf(absent), slotTexts(list))
+			b.mention(ctx, d.WhatsAppGroup, text, substitute, absent)
 		}
 	}
 

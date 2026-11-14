@@ -93,6 +93,34 @@ func (b *Bot) send(ctx context.Context, to string, text string) bool {
 	return true
 }
 
+/**
+ * NOTE: mention posts to a group marking people, so they are notified even with the group muted. People without a
+ * phone are written by name and not marked.
+ */
+func (b *Bot) mention(ctx context.Context, group string, text string, people ...store.Person) bool {
+	if b.Messenger == nil {
+		return false
+	}
+	var marked []messenger.Address
+	for _, p := range people {
+		if p.Phone != "" {
+			marked = append(marked, messenger.Address(p.Phone))
+		}
+	}
+	if _, err := b.Messenger.SendMention(ctx, messenger.Address(group), text, marked); err != nil {
+		b.logSendError(group, err)
+		return false
+	}
+	return true
+}
+
+func mentionOf(p store.Person) string {
+	if p.Phone == "" {
+		return p.Name
+	}
+	return "@" + p.Phone
+}
+
 func (b *Bot) sendPoll(ctx context.Context, kind string, person store.Person, question string, options []store.PollOption, multiple bool) bool {
 	if person.Phone == "" || b.Messenger == nil {
 		return false

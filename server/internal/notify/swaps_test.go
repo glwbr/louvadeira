@@ -53,7 +53,7 @@ func TestDecliningTheWholeWeekSendsOneInviteWithBothServices(t *testing.T) {
 	if absent := w.fake.to(w.phone(bassist)); len(absent) != 1 || !strings.Contains(absent[0].text, other+" vai ficar no seu lugar: "+both) {
 		t.Fatalf("absent messages = %+v", absent)
 	}
-	if swaps := w.fake.to(group); len(swaps) != 1 || !strings.Contains(swaps[0].text, other+" substitui "+bassist+" — "+both) {
+	if swaps := w.fake.to(group); len(swaps) != 1 || !strings.Contains(swaps[0].text, "@"+w.phone(other)+" substitui @"+w.phone(bassist)+" — "+both) {
 		t.Fatalf("group messages = %+v", swaps)
 	}
 }

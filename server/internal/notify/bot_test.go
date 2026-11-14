@@ -284,7 +284,7 @@ func TestDeclineInvitesTheOtherBassistAndTheFirstAcceptanceTakesTheSlot(t *testi
 	if slot.PersonName != substitute || slot.Status != store.AssignmentConfirmed || slot.CoverOpen {
 		t.Fatalf("slot after cover = %+v", slot)
 	}
-	if !containsText(w.fake.to(group), "🔄 Mudança na escala do Louvor: "+substitute+" substitui "+absent) {
+	if !containsText(w.fake.to(group), "🔄 Mudança na escala do Louvor: @"+w.phone(substitute)+" substitui @"+w.phone(absent)) {
 		t.Fatalf("group did not get the swap: %+v", w.fake.to(group))
 	}
 	if !containsText(w.fake.to(w.phone(absent)), substitute+" vai ficar no seu lugar") {
