@@ -374,3 +374,49 @@ func plural(n int, one, many string) string {
 	}
 	return many
 }
+
+const (
+	optionGapKeep = "✅ Segue assim"
+)
+
+/**
+ * NOTE: The leaders' question about a service still short of people, three days before it. Each line is one role:
+ * how many it has, who cannot go and who is still free to step in.
+ */
+func gapQuestion(name string, gaps []store.ServiceGap) string {
+	first := gaps[0]
+	lines := make([]string, len(gaps))
+	for i, g := range gaps {
+		lines[i] = gapLine(g)
+	}
+	return fmt.Sprintf("⚠️ %s · %s, %s, às %s\nOi, %s! Ainda falta gente nesse culto:\n%s\nO que a gente faz?", first.MinistryName,
+		capitalize(weekday(first.Date)), dayMonth(first.Date), hour(first.StartTime), firstName(name), strings.Join(lines, "\n"))
+}
+
+func gapLine(g store.ServiceGap) string {
+	line := fmt.Sprintf("• %s: %d de %d", g.RoleName, g.Filled, g.Slots)
+	if g.Filled == 0 {
+		line = fmt.Sprintf("• %s: ninguém ainda", g.RoleName)
+	}
+	if g.Minimum < g.Slots {
+		line += fmt.Sprintf(" (mínimo %d)", g.Minimum)
+	}
+	var notes []string
+	if len(g.Away) > 0 {
+		notes = append(notes, joinNames(g.Away)+" não "+plural(len(g.Away), "pode", "podem"))
+	}
+	notes = append(notes, joinNames(g.Free)+" "+plural(len(g.Free), "está livre", "estão livres"))
+	return line + " · " + strings.Join(notes, "; ")
+}
+
+func gapKeptReply(date, startTime string) string {
+	return fmt.Sprintf("✅ *Combinado!* O culto de %s segue assim. Não vou mais avisar sobre ele 🙂", whenAt(date, startTime))
+}
+
+func gapKeptAlert(leader, ministry, date, startTime string) string {
+	return fmt.Sprintf("✅ %s decidiu que o culto de %s segue assim (%s).", leader, whenAt(date, startTime), ministry)
+}
+
+func gapEditReply() string {
+	return "Combinado! É só ajustar a escala pelo app 🙂"
+}

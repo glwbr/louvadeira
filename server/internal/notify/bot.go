@@ -80,11 +80,15 @@ func (b *Bot) later(ctx context.Context, task func(context.Context)) {
 }
 
 func (b *Bot) serviceTime(d store.AssignmentDetail) time.Time {
+	return b.at(d.Date, d.StartTime)
+}
+
+func (b *Bot) at(date, startTime string) time.Time {
 	loc := b.Location
 	if loc == nil {
 		loc = time.UTC
 	}
-	t, _ := time.ParseInLocation("2006-01-02 15:04", d.Date+" "+d.StartTime, loc)
+	t, _ := time.ParseInLocation("2006-01-02 15:04", date+" "+startTime, loc)
 	return t
 }
 
@@ -234,6 +238,7 @@ func (b *Bot) Tick(ctx context.Context) {
 	}
 	if now.Hour() >= pendingHour {
 		b.alertPending(ctx, future, now)
+		b.alertGaps(ctx, now)
 	}
 	if now.Hour() >= reminderHour {
 		b.availabilityRound(ctx, now)
@@ -520,6 +525,9 @@ func (b *Bot) applyVote(ctx context.Context, vote messenger.Vote) {
 		return
 	case hasAction(poll.Options, actionPublish):
 		b.answerApproval(ctx, person, vote.PollID, chosen[len(chosen)-1])
+		return
+	case hasAction(poll.Options, actionGapKeep):
+		b.answerGap(ctx, person, vote.PollID, chosen[len(chosen)-1])
 		return
 	}
 	option := chosen[len(chosen)-1]

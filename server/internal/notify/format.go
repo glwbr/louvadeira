@@ -80,7 +80,11 @@ func personNames(people []store.Person) []string {
  * NOTE: "domingo, 22/11, às 19h" — how every message names a service.
  */
 func when(d store.AssignmentDetail) string {
-	return fmt.Sprintf("%s, %s, às %s", weekday(d.Date), dayMonth(d.Date), hour(d.StartTime))
+	return whenAt(d.Date, d.StartTime)
+}
+
+func whenAt(date, startTime string) string {
+	return fmt.Sprintf("%s, %s, às %s", weekday(date), dayMonth(date), hour(startTime))
 }
 
 /**

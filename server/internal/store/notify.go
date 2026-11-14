@@ -187,6 +187,11 @@ type PollOption struct {
 	// NOTE: Ministry and Month identify the schedule an availability or approval poll is about.
 	Ministry int64  `json:"ministry,omitempty"`
 	Month    string `json:"month,omitempty"`
+	// NOTE: Service, Date and Time identify the service a poll about missing people is about; Role, the role offered.
+	Service int64  `json:"service,omitempty"`
+	Date    string `json:"date,omitempty"`
+	Time    string `json:"time,omitempty"`
+	Role    int64  `json:"role,omitempty"`
 }
 
 type DateRange struct {
