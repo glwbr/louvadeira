@@ -1,0 +1,12 @@
+[Unit]
+Description=túnel do Cloudflare para o louvadeira
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/cloudflared --no-autoupdate --config %h/.cloudflared/config.yml tunnel run
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

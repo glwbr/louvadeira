@@ -6,7 +6,7 @@ Escalas dos ministérios da igreja: montar a escala, avisar pelo WhatsApp, confi
 |---|---|
 | `server/` | Go: API, SQLite, WhatsApp (whatsmeow) e o front embutido no binário |
 | `web/` | PWA em Vite, React, TypeScript e shadcn (tema azul escuro) |
-| `deploy/` | Serviço `systemd` de usuário, atalho `lv` e script de publicação no servidor |
+| `deploy/` | Serviços `systemd` de usuário (app e túnel), atalho `lv` e script de publicação no servidor |
 
 ## Desenvolvimento
 
@@ -54,6 +54,34 @@ systemctl --user status louvadeira                                # estado
 journalctl _SYSTEMD_USER_UNIT=louvadeira.service -f              # logs
 cat ~/louvadeira/louvadeira.env                                   # configuração e token de administrador
 ```
+
+## Endereço público
+
+O app abre fora de casa em `https://louvadeira.example.com`, por um túnel do Cloudflare: o servidor abre a
+conexão para fora, então nenhuma porta do roteador fica aberta. O `cloudflared` roda como serviço de usuário,
+ao lado do louvadeira.
+
+Configuração, uma única vez:
+
+1. No Mac, `cloudflared tunnel login` (autoriza `example.com` no navegador; o certificado da conta fica só
+   no Mac), depois `cloudflared tunnel create louvadeira` e
+   `cloudflared tunnel route dns louvadeira louvadeira.example.com`.
+2. Copiar `~/.cloudflared/<id>.json` para o mesmo caminho no servidor, com o `cloudflared` em
+   `~/.local/bin/` e este `~/.cloudflared/config.yml`:
+
+   ```yaml
+   tunnel: <id>
+   credentials-file: /home/<usuario>/.cloudflared/<id>.json
+   ingress:
+     - hostname: louvadeira.example.com
+       service: http://127.0.0.1:8090
+     - service: http_status:404
+   ```
+
+3. Instalar `deploy/cloudflared.service` em `~/.config/systemd/user/`, rodar
+   `systemctl --user enable --now cloudflared` e definir
+   `LOUVADEIRA_PUBLIC_URL=https://louvadeira.example.com` em `louvadeira.env`, que é para onde apontam os
+   links de acesso enviados no WhatsApp.
 
 ## WhatsApp em modo de teste
 
