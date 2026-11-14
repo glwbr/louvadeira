@@ -11,6 +11,16 @@ const WEEKDAY_KEYS = [
   "weekday.saturday",
 ] as const
 
+const WEEKDAY_SHORT_KEYS = [
+  "weekdayShort.sunday",
+  "weekdayShort.monday",
+  "weekdayShort.tuesday",
+  "weekdayShort.wednesday",
+  "weekdayShort.thursday",
+  "weekdayShort.friday",
+  "weekdayShort.saturday",
+] as const
+
 export const WEEKDAY_INDEXES = [0, 1, 2, 3, 4, 5, 6] as const
 
 export const REASONS: readonly Reason[] = [
@@ -84,6 +94,18 @@ export function formatDay(date: string): string {
 
 export function dayOfMonth(date: string): string {
   return date.split("-")[2]
+}
+
+export function weekdayShort(date: string): string {
+  return t(WEEKDAY_SHORT_KEYS[parseDate(date).getDay()])
+}
+
+export function longDate(date: string): string {
+  return new Intl.DateTimeFormat(LOCALE, { weekday: "long", day: "numeric", month: "long" }).format(parseDate(date))
+}
+
+export function thisMonth(): string {
+  return todayISO().slice(0, 7)
 }
 
 export function weekdayOf(date: string): string {
