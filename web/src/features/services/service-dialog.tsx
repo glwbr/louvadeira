@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { api, queryKeys, type Service } from "@/lib/api"
 import { toastError } from "@/lib/errors"
-import { WEEKDAYS } from "@/lib/format"
+import { WEEKDAY_INDEXES, weekdayName } from "@/lib/format"
 
 type Props = {
   open: boolean
@@ -83,9 +83,9 @@ function ServiceForm({ service, onDone }: { service?: Service; onDone: () => voi
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {WEEKDAYS.map((day, index) => (
-                <SelectItem key={day} value={String(index)}>
-                  {day}
+              {WEEKDAY_INDEXES.map((index) => (
+                <SelectItem key={index} value={String(index)}>
+                  {weekdayName(index)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -106,7 +106,7 @@ function ServiceForm({ service, onDone }: { service?: Service; onDone: () => voi
             <SelectItem value="none">Não tem Santa Ceia neste culto</SelectItem>
             {[1, 2, 3, 4].map((n) => (
               <SelectItem key={n} value={String(n)}>
-                {n}º {WEEKDAYS[Number(weekday)].toLowerCase()} do mês
+                {n}º {weekdayName(Number(weekday)).toLowerCase()} do mês
               </SelectItem>
             ))}
           </SelectContent>

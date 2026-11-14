@@ -9,7 +9,7 @@ import { ListSkeleton } from "@/components/list-skeleton"
 import { Button } from "@/components/ui/button"
 import { api, queryKeys, type MemberSlot, type Unavailability } from "@/lib/api"
 import { toastError } from "@/lib/errors"
-import { absenceLabel, firstName, formatDay, REASON_LABEL, weekdayOf } from "@/lib/format"
+import { absenceLabel, firstName, formatDay, reasonLabel, weekdayOf } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 import { MyAbsenceDialog } from "./my-absence-dialog"
@@ -203,7 +203,7 @@ function AbsencesSection({ absences, loading }: { absences?: Unavailability[]; l
             <li key={u.id} className="flex items-center gap-3 px-4 py-3">
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium">{absenceLabel(u)}</p>
-                <p className="text-xs text-muted-foreground">{u.fromPoll ? "Pela enquete" : REASON_LABEL[u.reason]}</p>
+                <p className="text-xs text-muted-foreground">{u.fromPoll ? "Pela enquete" : reasonLabel(u.reason)}</p>
               </div>
               {u.scheduled > 0 && (
                 <Button size="sm" variant="outline" onClick={() => setCoversFor(u)}>

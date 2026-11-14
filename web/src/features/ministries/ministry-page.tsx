@@ -11,7 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { api, queryKeys, type Member, type MinistryDetail, type Role } from "@/lib/api"
 import { toastError } from "@/lib/errors"
-import { ROTATION_LABEL, serviceLabel } from "@/lib/format"
+import { rotationLabel, serviceLabel } from "@/lib/format"
 import { MemberDialog } from "./member-dialog"
 import { MinistryDialog } from "./ministry-dialog"
 import { RoleDialog } from "./role-dialog"
@@ -44,7 +44,7 @@ export function MinistryPage() {
       <div className="mb-5 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="truncate text-2xl font-semibold tracking-tight">{detail.name}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{ROTATION_LABEL[detail.rotationUnit]}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{rotationLabel(detail.rotationUnit)}</p>
         </div>
         <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
           <Pencil />

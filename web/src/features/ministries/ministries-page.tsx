@@ -8,7 +8,7 @@ import { ListSkeleton } from "@/components/list-skeleton"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
 import { api, queryKeys } from "@/lib/api"
-import { ROTATION_LABEL } from "@/lib/format"
+import { rotationLabel } from "@/lib/format"
 import { MinistryDialog } from "./ministry-dialog"
 
 export function MinistriesPage() {
@@ -49,7 +49,7 @@ export function MinistriesPage() {
                   <p className="truncate font-medium">{ministry.name}</p>
                   <p className="text-sm text-muted-foreground">
                     {ministry.memberCount} {ministry.memberCount === 1 ? "pessoa" : "pessoas"} ·{" "}
-                    {ROTATION_LABEL[ministry.rotationUnit]}
+                    {rotationLabel(ministry.rotationUnit)}
                   </p>
                 </div>
                 <ChevronRight className="size-4 text-muted-foreground" />

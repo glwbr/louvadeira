@@ -2,7 +2,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { Reason, Repeat, UnavailabilityInput } from "@/lib/api"
-import { absenceLabel, REASON_LABEL, WEEKDAYS } from "@/lib/format"
+import { absenceLabel, reasonLabel, REASONS, WEEKDAY_INDEXES, weekdayName } from "@/lib/format"
 
 export type AbsenceDraft = {
   repeat: Repeat
@@ -101,9 +101,9 @@ export function AbsenceFields({ value, onChange }: { value: AbsenceDraft; onChan
                 <SelectValue placeholder="Escolha o dia" />
               </SelectTrigger>
               <SelectContent>
-                {WEEKDAYS.map((day, index) => (
-                  <SelectItem key={day} value={String(index)}>
-                    {day}
+                {WEEKDAY_INDEXES.map((index) => (
+                  <SelectItem key={index} value={String(index)}>
+                    {weekdayName(index)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -153,9 +153,9 @@ export function AbsenceFields({ value, onChange }: { value: AbsenceDraft; onChan
             <SelectValue placeholder="Escolha o motivo" />
           </SelectTrigger>
           <SelectContent>
-            {Object.entries(REASON_LABEL).map(([reason, label]) => (
+            {REASONS.map((reason) => (
               <SelectItem key={reason} value={reason}>
-                {label}
+                {reasonLabel(reason)}
               </SelectItem>
             ))}
           </SelectContent>

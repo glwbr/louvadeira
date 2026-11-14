@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton"
 import { api, queryKeys, type Unavailability } from "@/lib/api"
 import { toastError } from "@/lib/errors"
-import { absenceLabel, firstName, formatDay, REASON_LABEL, weekdayOf } from "@/lib/format"
+import { absenceLabel, firstName, formatDay, reasonLabel, weekdayOf } from "@/lib/format"
 
 import { AbsenceFields, absenceInput, absenceReady, emptyAbsence } from "./absence-fields"
 
@@ -164,7 +164,7 @@ export function OpenCovers({ absence, onDone, mine = false }: { absence: Unavail
         </ul>
       )}
       <p className="text-xs text-muted-foreground">
-        O motivo ({REASON_LABEL[absence.reason].toLowerCase()}) fica só com a liderança.
+        O motivo ({reasonLabel(absence.reason).toLowerCase()}) fica só com a liderança.
       </p>
       <DialogFooter>
         <Button variant="outline" onClick={onDone}>

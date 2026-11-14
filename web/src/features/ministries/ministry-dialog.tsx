@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { api, queryKeys, type Ministry, type RotationUnit } from "@/lib/api"
 import { toastError } from "@/lib/errors"
-import { ROTATION_LABEL } from "@/lib/format"
+import { rotationLabel } from "@/lib/format"
 
 type Props = {
   open: boolean
@@ -87,8 +87,8 @@ function MinistryForm({ ministry, onDone }: { ministry?: Ministry; onDone: () =>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="week">{ROTATION_LABEL.week}</SelectItem>
-            <SelectItem value="service">{ROTATION_LABEL.service}</SelectItem>
+            <SelectItem value="week">{rotationLabel("week")}</SelectItem>
+            <SelectItem value="service">{rotationLabel("service")}</SelectItem>
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">

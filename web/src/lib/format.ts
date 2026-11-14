@@ -1,10 +1,37 @@
 import type { Reason, RotationUnit, Service, Unavailability } from "@/lib/api"
+import { LOCALE, t } from "@/lib/i18n"
 
-export const WEEKDAYS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"] as const
+const WEEKDAY_KEYS = [
+  "weekday.sunday",
+  "weekday.monday",
+  "weekday.tuesday",
+  "weekday.wednesday",
+  "weekday.thursday",
+  "weekday.friday",
+  "weekday.saturday",
+] as const
 
-export const ROTATION_LABEL: Record<RotationUnit, string> = {
-  week: "Rodízio por semana",
-  service: "Rodízio por culto",
+export const WEEKDAY_INDEXES = [0, 1, 2, 3, 4, 5, 6] as const
+
+export const REASONS: readonly Reason[] = [
+  "viagem",
+  "trabalho",
+  "saude",
+  "familia",
+  "estudos",
+  "outro",
+]
+
+export function weekdayName(index: number): string {
+  return t(WEEKDAY_KEYS[index])
+}
+
+export function rotationLabel(unit: RotationUnit): string {
+  return t(`format.rotation.${unit}`)
+}
+
+export function reasonLabel(reason: Reason): string {
+  return t(`format.reason.${reason}`)
 }
 
 export function formatPhone(digits: string): string {
@@ -15,12 +42,34 @@ export function formatPhone(digits: string): string {
   return digits ? `+${digits}` : ""
 }
 
-export function serviceLabel(service: Pick<Service, "weekday" | "startTime">): string {
-  return `${WEEKDAYS[service.weekday]}, ${service.startTime.replace(":", "h")}`
+/**
+ * NOTE: "19:00" reads as "19h" and "19:30" as "19h30", the way the team writes it on WhatsApp.
+ */
+export function formatTime(startTime: string): string {
+  const [hours, minutes] = startTime.split(":")
+  return minutes === "00"
+    ? t("format.timeOnTheHour", { hours })
+    : t("format.time", { hours, minutes })
+}
+
+export function serviceLabel(
+  service: Pick<Service, "weekday" | "startTime">
+): string {
+  return t("format.serviceWhen", {
+    weekday: weekdayName(service.weekday),
+    time: formatTime(service.startTime),
+  })
 }
 
 export function firstName(name: string): string {
   return name.split(" ")[0] ?? name
+}
+
+export function initials(name: string): string {
+  const parts = name.trim().split(/\s+/)
+  const first = parts[0]?.charAt(0) ?? ""
+  const last = parts.length > 1 ? parts[parts.length - 1].charAt(0) : ""
+  return (first + last).toUpperCase()
 }
 
 function parseDate(date: string): Date {
@@ -33,19 +82,37 @@ export function formatDay(date: string): string {
   return `${day}/${month}`
 }
 
+export function dayOfMonth(date: string): string {
+  return date.split("-")[2]
+}
+
 export function weekdayOf(date: string): string {
-  return WEEKDAYS[parseDate(date).getDay()]
+  return weekdayName(parseDate(date).getDay())
+}
+
+export function dayAndTime(date: string, startTime: string): string {
+  return t("format.dayAndTime", {
+    weekday: weekdayOf(date),
+    day: formatDay(date),
+    time: formatTime(startTime),
+  })
 }
 
 export function weekRange(start: string): string {
   const end = parseDate(start)
   end.setDate(end.getDate() + 6)
   const pad = (n: number) => String(n).padStart(2, "0")
-  return `${formatDay(start)} a ${pad(end.getDate())}/${pad(end.getMonth() + 1)}`
+  return t("format.dayRange", {
+    from: formatDay(start),
+    to: `${pad(end.getDate())}/${pad(end.getMonth() + 1)}`,
+  })
 }
 
 export function monthLabel(month: string): string {
-  const label = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" }).format(parseDate(`${month}-01`))
+  const label = new Intl.DateTimeFormat(LOCALE, {
+    month: "long",
+    year: "numeric",
+  }).format(parseDate(`${month}-01`))
   return label.charAt(0).toUpperCase() + label.slice(1)
 }
 
@@ -57,20 +124,32 @@ export function shiftMonth(month: string, delta: number): string {
 
 export function nextMonth(): string {
   const today = new Date()
-  return shiftMonth(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`, 1)
+  return shiftMonth(
+    `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`,
+    1
+  )
+}
+
+export function todayISO(): string {
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 }
 
 export function monthBounds(month: string): { from: string; to: string } {
   const last = parseDate(`${shiftMonth(month, 1)}-01`)
   last.setDate(last.getDate() - 1)
-  return { from: `${month}-01`, to: `${month}-${String(last.getDate()).padStart(2, "0")}` }
+  return {
+    from: `${month}-01`,
+    to: `${month}-${String(last.getDate()).padStart(2, "0")}`,
+  }
 }
 
 export function formatDateRange(start: string, end: string): string {
-  return start === end ? formatDay(start) : `${formatDay(start)} a ${formatDay(end)}`
+  return start === end
+    ? formatDay(start)
+    : t("format.dayRange", { from: formatDay(start), to: formatDay(end) })
 }
-
-const WEEKDAYS_LOWER = WEEKDAYS.map((day) => day.toLowerCase())
 
 function masculine(weekday: number): boolean {
   return weekday === 0 || weekday === 6
@@ -79,16 +158,35 @@ function masculine(weekday: number): boolean {
 /**
  * NOTE: How an absence reads in a list: "03/12 a 31/12", "Toda quinta até 31/03" or "Todo 1º domingo do mês".
  */
-export function absenceLabel(u: Pick<Unavailability, "startDate" | "endDate" | "repeat" | "weekday" | "weekOfMonth">): string {
+export function absenceLabel(
+  u: Pick<
+    Unavailability,
+    "startDate" | "endDate" | "repeat" | "weekday" | "weekOfMonth"
+  >
+): string {
   if (u.repeat === "none" || u.weekday === null) {
     return formatDateRange(u.startDate, u.endDate)
   }
-  const day = WEEKDAYS_LOWER[u.weekday]
-  let label = masculine(u.weekday) ? `Todo ${day}` : `Toda ${day}`
+  const weekday = weekdayName(u.weekday).toLowerCase()
+  const isMasculine = masculine(u.weekday)
+  let label = t(
+    isMasculine
+      ? "format.absence.everyMasculine"
+      : "format.absence.everyFeminine",
+    { weekday }
+  )
   if (u.repeat === "monthly" && u.weekOfMonth) {
-    label = masculine(u.weekday) ? `Todo ${u.weekOfMonth}º ${day} do mês` : `Toda ${u.weekOfMonth}ª ${day} do mês`
+    const week = u.weekOfMonth
+    label = t(
+      isMasculine
+        ? "format.absence.monthlyMasculine"
+        : "format.absence.monthlyFeminine",
+      { week, weekday }
+    )
   }
-  return u.endDate ? `${label} até ${formatDay(u.endDate)}` : label
+  return u.endDate
+    ? t("format.absence.until", { label, day: formatDay(u.endDate) })
+    : label
 }
 
 /**
@@ -105,21 +203,47 @@ export function absenceCovers(u: Unavailability, date: string): boolean {
   if (day.getDay() !== u.weekday) {
     return false
   }
-  return u.repeat === "weekly" || Math.floor((day.getDate() - 1) / 7) + 1 === u.weekOfMonth
+  return (
+    u.repeat === "weekly" ||
+    Math.floor((day.getDate() - 1) / 7) + 1 === u.weekOfMonth
+  )
 }
 
-export const REASON_LABEL: Record<Reason, string> = {
-  viagem: "Viagem",
-  trabalho: "Trabalho",
-  saude: "Saúde",
-  familia: "Família",
-  estudos: "Estudos",
-  outro: "Outro",
-}
-
-export function communionLabel(service: Pick<Service, "weekday" | "communionWeek">): string | null {
+export function communionLabel(
+  service: Pick<Service, "weekday" | "communionWeek">
+): string | null {
   if (!service.communionWeek) {
     return null
   }
-  return `Santa Ceia no ${service.communionWeek}º ${WEEKDAYS[service.weekday].toLowerCase()} do mês`
+  return t("format.communion", {
+    week: service.communionWeek,
+    weekday: weekdayName(service.weekday).toLowerCase(),
+  })
+}
+
+export function ordinalOfMonth(week: number, weekday: number): string {
+  return t("format.ordinalOfMonth", {
+    week,
+    weekday: weekdayName(weekday).toLowerCase(),
+  })
+}
+
+/**
+ * NOTE: Formats a Brazilian number while it is typed: "(75) 99999-9999", or "(75) 9999-9999" for landlines.
+ */
+export function maskPhone(input: string): string {
+  const digits = input.replace(/\D/g, "").slice(0, 11)
+  if (digits.length <= 2) {
+    return digits.length ? `(${digits}` : ""
+  }
+  const area = digits.slice(0, 2)
+  const rest = digits.slice(2)
+  const split = rest.length > 8 ? 5 : 4
+  return rest.length > split
+    ? `(${area}) ${rest.slice(0, split)}-${rest.slice(split)}`
+    : `(${area}) ${rest}`
+}
+
+export function phoneDigits(input: string): string {
+  return input.replace(/\D/g, "")
 }

@@ -28,17 +28,7 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ApiError, api, queryKeys, type CoverRequest, type ScheduleSlot, type ScheduleView, type Unavailability } from "@/lib/api"
 import { toastError } from "@/lib/errors"
-import {
-  REASON_LABEL,
-  absenceLabel,
-  formatDay,
-  monthBounds,
-  monthLabel,
-  nextMonth,
-  shiftMonth,
-  weekRange,
-  weekdayOf,
-} from "@/lib/format"
+import { absenceLabel, formatDay, monthBounds, monthLabel, nextMonth, reasonLabel, shiftMonth, weekdayOf, weekRange } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { SlotDialog, type SlotSelection } from "./slot-dialog"
 import { UnavailabilityDialog } from "./unavailability-dialog"
@@ -327,7 +317,7 @@ function UnavailabilityCard({ list, defaultDate }: { list: Unavailability[]; def
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{u.personName}</p>
                 <p className="text-xs text-muted-foreground">
-                  {absenceLabel(u)} · {u.fromPoll ? "pela enquete" : REASON_LABEL[u.reason]}
+                  {absenceLabel(u)} · {u.fromPoll ? "pela enquete" : reasonLabel(u.reason)}
                 </p>
               </div>
               {u.scheduled > 0 && (
