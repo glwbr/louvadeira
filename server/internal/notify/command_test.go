@@ -29,6 +29,7 @@ func TestParseCommand(t *testing.T) {
 		{"não vou poder do dia 10/12 até o dia 20/12", commandCannot, "2026-12-10..2026-12-20"},
 		{"não posso até 20/12", commandCannot, "2026-11-13..2026-12-20"},
 		{"não posso dia 19 e 22/11", commandCannot, "2026-11-19 2026-11-22"},
+		{"não posso dia 19, 15 e 22", commandCannot, "2026-11-19 2026-11-15 2026-11-22"},
 		{"não posso dia 31/11", commandCannot, ""},
 	}
 	for _, c := range cases {

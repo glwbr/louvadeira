@@ -221,6 +221,14 @@ func absenceQuestion(name, period string, lines []string) string {
 	return text
 }
 
+func absenceDaysQuestion(name string, lines []string) string {
+	text := fmt.Sprintf("Só para confirmar, %s: em quais destes dias você não vai poder? Marque só os que estiverem certos 🙂", firstName(name))
+	if len(lines) > 0 {
+		text += "\nVocê está na escala em:\n" + strings.Join(lines, "\n")
+	}
+	return text
+}
+
 func absenceNotedReply(name, period string) string {
 	return fmt.Sprintf("Anotado, %s! A gente não coloca você na escala %s 🙏", firstName(name), period)
 }

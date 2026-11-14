@@ -34,6 +34,7 @@ var (
 	punctuation   = regexp.MustCompile(`[^a-z0-9/ ]+`)
 	spaces        = regexp.MustCompile(`\s+`)
 	dateWord      = regexp.MustCompile(`(?:dia )?(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?|dia (\d{1,2})|domingo|segunda|terca|quarta|quinta|sexta|sabado|hoje|amanha`)
+	dayList       = regexp.MustCompile(`dia \d{1,2}((?: (?:e )?\d{1,2}\b)+)`)
 	rangeLink     = regexp.MustCompile(`^\s*(a|ate|ao|e)\s*(o\s+)?(dia\s+)?$`)
 	weekdayNames  = map[string]time.Weekday{"domingo": time.Sunday, "segunda": time.Monday, "terca": time.Tuesday, "quarta": time.Wednesday, "quinta": time.Thursday, "sexta": time.Friday, "sabado": time.Saturday}
 )
@@ -76,6 +77,16 @@ func parseCommand(text string, today time.Time) (command, bool) {
  * Dates without a year, and days without a month, mean the next time that day comes.
  */
 func parseRanges(text string, today time.Time) []store.DateRange {
+	// NOTE: "dia 22, 19 e 15" lists more days after the first one; spell each out as "dia N".
+	text = dayList.ReplaceAllStringFunc(text, func(list string) string {
+		var days []string
+		for _, field := range strings.Fields(list)[1:] {
+			if field != "e" {
+				days = append(days, "dia "+field)
+			}
+		}
+		return strings.Join(days, " e ")
+	})
 	day := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.UTC)
 	matches := dateWord.FindAllStringSubmatchIndex(text, -1)
 	var dates []time.Time

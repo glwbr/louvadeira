@@ -3,6 +3,8 @@ package notify
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"louvadeira/internal/messenger"
@@ -195,7 +197,13 @@ func rangesLabel(ranges []store.DateRange) string {
 	return joinNames(spans)
 }
 
+/**
+ * NOTE: One period gets a yes/no question; several days get a poll where the person ticks only the days that are
+ * right, so "19 e 22 sim, 15 não" needs no typing.
+ */
 func (b *Bot) askAbsence(ctx context.Context, person store.Person, ranges []store.DateRange) {
+	ranges = slices.Clone(ranges)
+	slices.SortFunc(ranges, func(a, b store.DateRange) int { return strings.Compare(a.From, b.From) })
 	var lines []string
 	for _, r := range ranges {
 		services, err := b.memberServices(ctx, person, r.From, r.To)
@@ -209,11 +217,28 @@ func (b *Bot) askAbsence(ctx context.Context, person store.Person, ranges []stor
 			}
 		}
 	}
-	options := []store.PollOption{
-		{Label: optionYesTell, Action: actionAbsence, Ranges: ranges},
-		{Label: optionMistake, Action: actionKeep},
+	if len(ranges) == 1 {
+		options := []store.PollOption{
+			{Label: optionYesTell, Action: actionAbsence, Ranges: ranges},
+			{Label: optionMistake, Action: actionKeep},
+		}
+		b.sendPoll(ctx, store.PollConfirm, person, absenceQuestion(person.Name, rangesLabel(ranges), lines), options, false)
+		return
 	}
-	b.sendPoll(ctx, store.PollConfirm, person, absenceQuestion(person.Name, rangesLabel(ranges), lines), options, false)
+	ranges = ranges[:min(len(ranges), maxPollSlots)]
+	options := make([]store.PollOption, 0, len(ranges)+1)
+	for _, r := range ranges {
+		options = append(options, store.PollOption{Label: "😕 " + rangeOption(r), Action: actionAbsence, Ranges: []store.DateRange{r}})
+	}
+	options = append(options, store.PollOption{Label: optionMistake, Action: actionKeep})
+	b.sendPoll(ctx, store.PollConfirm, person, absenceDaysQuestion(person.Name, lines), options, true)
+}
+
+func rangeOption(r store.DateRange) string {
+	if r.From == r.To {
+		return capitalize(weekday(r.From)) + ", " + dayMonth(r.From)
+	}
+	return fmt.Sprintf("De %s a %s", dayMonth(r.From), dayMonth(r.To))
 }
 
 func isChatPoll(options []store.PollOption) bool {

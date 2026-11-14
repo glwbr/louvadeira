@@ -100,6 +100,24 @@ func TestCannotWithoutADateAsksWhichService(t *testing.T) {
 	}
 }
 
+func TestSeveralDaysLetThePersonTickOnlyTheRightOnes(t *testing.T) {
+	w := newWorld(t)
+	bassist := w.slotOf("2026-11-19", "Baixo").PersonName
+	w.says(bassist, "não posso dia 22, 19 e 15")
+	poll := lastPoll(t, w.fake.to(w.phone(bassist)))
+	want := "😕 Domingo, 15/11|😕 Quinta, 19/11|😕 Domingo, 22/11|✅ Me enganei"
+	if !poll.multiple || strings.Join(poll.options, "|") != want {
+		t.Fatalf("poll = %+v", poll)
+	}
+	w.tick(poll, false, "😕 Quinta, 19/11")
+	if slot := w.slotOf("2026-11-19", "Baixo"); slot.Status != store.AssignmentDeclined {
+		t.Fatalf("thursday = %+v", slot)
+	}
+	if slot := w.slotOf("2026-11-22", "Baixo"); slot.Status != store.AssignmentScheduled {
+		t.Fatalf("sunday was not ticked = %+v", slot)
+	}
+}
+
 func TestAnAbsenceWithoutServicesIsNotedForTheLeaders(t *testing.T) {
 	w := newWorld(t)
 	w.says("Ana", "não vou poder de 10/12 a 20/12")
