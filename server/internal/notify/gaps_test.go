@@ -42,7 +42,7 @@ func (w *world) emptyAVoice() string {
 	w.t.Helper()
 	for _, slot := range w.slotsOf(sunday, "Voz") {
 		if slot.PersonName != "Líder" {
-			if err := w.store.SetAssignment(context.Background(), w.ministry.ID, w.month, slot.AssignmentID, nil, w.clock); err != nil {
+			if _, err := w.store.SetAssignment(context.Background(), w.ministry.ID, w.month, slot.AssignmentID, nil, w.clock); err != nil {
 				w.t.Fatal(err)
 			}
 			return slot.PersonName

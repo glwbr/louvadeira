@@ -416,7 +416,7 @@ func TestSummaryUsesTheTeamFormat(t *testing.T) {
 	w := newWorld(t)
 	ctx := context.Background()
 	slot := w.slotOf("2026-11-19", "Baixo")
-	if err := w.store.SetAssignment(ctx, w.ministry.ID, w.month, slot.AssignmentID, nil, w.clock); err != nil {
+	if _, err := w.store.SetAssignment(ctx, w.ministry.ID, w.month, slot.AssignmentID, nil, w.clock); err != nil {
 		t.Fatal(err)
 	}
 	ministry, _ := w.store.Ministry(ctx, w.ministry.ID)

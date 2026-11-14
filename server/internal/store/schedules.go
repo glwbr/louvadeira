@@ -207,28 +207,49 @@ func (s *Store) CheckAssignment(ctx context.Context, ministryID int64, month str
 }
 
 /**
+ * NOTE: What a manual change did to a slot. Before is who held it (nil when it was empty) and BeforeDeclined whether
+ * they had said they could not go; After is the slot as it is now; Waiting are the people still invited to a swap the
+ * change settled.
+ */
+type AssignmentChange struct {
+	Published      bool
+	Before         *Person
+	BeforeDeclined bool
+	After          AssignmentDetail
+	Waiting        []Person
+}
+
+/**
  * CONSTRAINT: Only members of the ministry can be put in a slot; a nil person empties it. A manual change settles any
  * swap still open for the slot and the new person has to confirm again.
  */
-func (s *Store) SetAssignment(ctx context.Context, ministryID int64, month string, assignmentID int64, personID *int64, now time.Time) error {
-	var scheduleID int64
+func (s *Store) SetAssignment(ctx context.Context, ministryID int64, month string, assignmentID int64, personID *int64, now time.Time) (AssignmentChange, error) {
+	var status string
 	err := s.db.QueryRowContext(ctx, `
-		SELECT sc.id FROM assignments a JOIN schedules sc ON sc.id = a.schedule_id
-		WHERE a.id = ? AND sc.ministry_id = ? AND sc.month = ?`, assignmentID, ministryID, month).Scan(&scheduleID)
+		SELECT sc.status FROM assignments a JOIN schedules sc ON sc.id = a.schedule_id
+		WHERE a.id = ? AND sc.ministry_id = ? AND sc.month = ?`, assignmentID, ministryID, month).Scan(&status)
 	if err != nil {
-		return notFoundIfNoRows(err)
+		return AssignmentChange{}, notFoundIfNoRows(err)
 	}
 	if personID != nil {
 		var member bool
 		if err := s.db.QueryRowContext(ctx,
 			"SELECT EXISTS (SELECT 1 FROM ministry_members WHERE ministry_id = ? AND person_id = ?)", ministryID, *personID).Scan(&member); err != nil {
-			return err
+			return AssignmentChange{}, err
 		}
 		if !member {
-			return invalid("essa pessoa não faz parte do ministério")
+			return AssignmentChange{}, invalid("essa pessoa não faz parte do ministério")
 		}
 	}
-	return s.inTx(ctx, func(tx *sql.Tx) error {
+	change := AssignmentChange{Published: status == StatusPublished}
+	var before sql.NullInt64
+	var settled []int64
+	err = s.inTx(ctx, func(tx *sql.Tx) error {
+		var previous string
+		if err := tx.QueryRowContext(ctx, "SELECT person_id, status FROM assignments WHERE id = ?", assignmentID).Scan(&before, &previous); err != nil {
+			return err
+		}
+		change.BeforeDeclined = previous == AssignmentDeclined
 		if _, err := tx.ExecContext(ctx,
 			"UPDATE assignments SET person_id = ?, status = 'scheduled', responded_at = NULL WHERE id = ?", personID, assignmentID); err != nil {
 			return err
@@ -237,11 +258,44 @@ func (s *Store) SetAssignment(ctx context.Context, ministryID int64, month strin
 		if personID != nil {
 			outcome = CoverCovered
 		}
-		_, err := tx.ExecContext(ctx, `
+		rows, err := tx.QueryContext(ctx, `
 			UPDATE cover_requests SET status = ?, covered_by = ?, resolved_at = ?
-			WHERE assignment_id = ? AND status = 'open'`, outcome, personID, formatTime(now), assignmentID)
-		return err
+			WHERE assignment_id = ? AND status = 'open'
+			RETURNING id`, outcome, personID, formatTime(now), assignmentID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id int64
+			if err := rows.Scan(&id); err != nil {
+				return err
+			}
+			settled = append(settled, id)
+		}
+		return rows.Err()
 	})
+	if err != nil {
+		return AssignmentChange{}, err
+	}
+	if before.Valid {
+		p, err := scanPerson(s.db.QueryRowContext(ctx, "SELECT "+personColumns+" FROM people WHERE id = ?", before.Int64))
+		if err != nil {
+			return AssignmentChange{}, err
+		}
+		change.Before = &p
+	}
+	for _, id := range settled {
+		waiting, err := s.queryPeople(ctx, `
+			SELECT `+personColumnsP+` FROM cover_invites ci JOIN people p ON p.id = ci.person_id
+			WHERE ci.request_id = ? AND ci.answer IS NULL`, id)
+		if err != nil {
+			return AssignmentChange{}, err
+		}
+		change.Waiting = append(change.Waiting, waiting...)
+	}
+	change.After, err = s.AssignmentDetail(ctx, assignmentID)
+	return change, err
 }
 
 /**

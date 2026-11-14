@@ -198,6 +198,14 @@ func replacedNotice(absent, substitute string, lines []string) string {
 	return fmt.Sprintf("🔄 *Boa notícia*, %s! %s vai ficar no seu lugar:\n%s", firstName(absent), substitute, strings.Join(lines, "\n"))
 }
 
+func leaderSwapNotice(absent, substitute string, lines []string) string {
+	return fmt.Sprintf("🔄 Oi, %s! Mudança na escala: %s fica no seu lugar.\n%s", firstName(absent), substitute, strings.Join(lines, "\n"))
+}
+
+func removedNotice(name string, lines []string) string {
+	return fmt.Sprintf("🔄 Oi, %s! Mudança na escala: você saiu deste culto.\n%s", firstName(name), strings.Join(lines, "\n"))
+}
+
 func swapAnnouncement(ministry, substitute, absent string, lines []string) string {
 	return fmt.Sprintf("🔄 *Mudança na escala do %s*\n%s substitui %s\n%s", ministry, substitute, absent, strings.Join(lines, "\n"))
 }

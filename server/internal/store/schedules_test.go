@@ -130,13 +130,13 @@ func TestEditingSlotsAndWarnings(t *testing.T) {
 	bassSlot := view.Weeks[0].Services[0].Roles[1].Slots[0]
 
 	outsider, _ := s.CreatePerson(ctx, store.PersonInput{Name: "Fora"})
-	if err := s.SetAssignment(ctx, w.ministry.ID, "2026-12", bassSlot.AssignmentID, &outsider.ID, generatedAt); !isValidation(err) {
+	if _, err := s.SetAssignment(ctx, w.ministry.ID, "2026-12", bassSlot.AssignmentID, &outsider.ID, generatedAt); !isValidation(err) {
 		t.Fatalf("non-member: err = %v", err)
 	}
-	if err := s.SetAssignment(ctx, w.ministry.ID, "2026-11", bassSlot.AssignmentID, nil, generatedAt); !errors.Is(err, store.ErrNotFound) {
+	if _, err := s.SetAssignment(ctx, w.ministry.ID, "2026-11", bassSlot.AssignmentID, nil, generatedAt); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("wrong month: err = %v", err)
 	}
-	if err := s.SetAssignment(ctx, w.ministry.ID, "2026-12", bassSlot.AssignmentID, nil, generatedAt); err != nil {
+	if _, err := s.SetAssignment(ctx, w.ministry.ID, "2026-12", bassSlot.AssignmentID, nil, generatedAt); err != nil {
 		t.Fatal(err)
 	}
 	_, err := s.CreateUnavailability(ctx, store.UnavailabilityInput{PersonID: w.people["Eli"].ID, StartDate: "2026-12-06", Reason: store.ReasonWork})

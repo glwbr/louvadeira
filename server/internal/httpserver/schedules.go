@@ -65,7 +65,20 @@ func (d Deps) setAssignment(w http.ResponseWriter, r *http.Request) {
 	if !ok || !okMonth || !okAssignment || !decodeJSON(w, r, &req) {
 		return
 	}
-	d.respond(w, http.StatusNoContent, nil, d.Store.SetAssignment(r.Context(), id, month, assignmentID, req.PersonID, d.now()))
+	change, err := d.Store.SetAssignment(r.Context(), id, month, assignmentID, req.PersonID, d.now())
+	if err != nil {
+		d.fail(w, err)
+		return
+	}
+	if d.Bot != nil && change.Published {
+		actor, _ := personFrom(r.Context())
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			d.Bot.AnnounceChange(ctx, change, actor.ID)
+		}()
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (d Deps) publishSchedule(w http.ResponseWriter, r *http.Request) {

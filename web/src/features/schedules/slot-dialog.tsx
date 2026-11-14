@@ -111,6 +111,23 @@ function SlotPicker({
     onError: toastError,
   })
 
+  // NOTE: Mirrors what the server sends for a change to a published schedule; past services send nothing.
+  const changeNote = (change: NonNullable<Pending>) => {
+    if (past) {
+      return undefined
+    }
+    const from = firstName(current)
+    const to = firstName(change.name)
+    const group = ministry.whatsappGroup !== ""
+    if (change.personId === null) {
+      return current ? t("slot.noteVacate", { from }) : undefined
+    }
+    if (current) {
+      return t(group ? "slot.noteSwapGroup" : "slot.noteSwap", { from, to })
+    }
+    return t(group ? "slot.noteFillGroup" : "slot.noteFill", { to })
+  }
+
   const choose = (personId: number | null, name: string) => {
     if (published) {
       setPending({ personId, name })
@@ -197,10 +214,12 @@ function SlotPicker({
                   ? t("slot.swapTitle", { from: firstName(current), to: firstName(pending.name) })
                   : t("slot.fillTitle", { to: firstName(pending.name) })}
             </p>
-            <p className="flex gap-2 rounded-xl bg-warning/10 p-3 text-sm text-pretty text-warning">
-              <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
-              {t("slot.publishedNote")}
-            </p>
+            {changeNote(pending) && (
+              <p className="flex gap-2 rounded-xl bg-muted p-3 text-sm text-pretty text-muted-foreground">
+                <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+                {changeNote(pending)}
+              </p>
+            )}
             <DialogFooter>
               <Button variant="ghost" onClick={() => setPending(undefined)} disabled={assign.isPending}>
                 {t("slot.back")}
