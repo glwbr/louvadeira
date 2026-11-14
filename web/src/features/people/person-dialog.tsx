@@ -23,7 +23,7 @@ export function PersonDialog({ open, onOpenChange, person, canArchive }: Props) 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent autoFocusFirst={!person}>
-        {open && <PersonForm person={person} canArchive={canArchive} onDone={() => onOpenChange(false)} />}
+        <PersonForm key={person?.id ?? "new"} person={person} canArchive={canArchive} onDone={() => onOpenChange(false)} />
       </DialogContent>
     </Dialog>
   )

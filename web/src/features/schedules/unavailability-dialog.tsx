@@ -8,13 +8,13 @@ import { toast } from "sonner"
 import { DateBlock } from "@/components/date-block"
 import { useAppForm } from "@/components/form"
 import { ErrorState } from "@/components/error-state"
-import { RevealItem } from "@/components/motion"
 import { RoleIcon } from "@/components/role-icon"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api, queryKeys, type Unavailability } from "@/lib/api"
 import { toastError } from "@/lib/errors"
+import { useRetained } from "@/lib/use-retained"
 import { absenceLabel, firstName } from "@/lib/format"
 
 import { AbsenceFields, absenceDefaults, absenceInput, validateAbsence } from "./absence-form"
@@ -28,10 +28,11 @@ type Props = {
 }
 
 export function UnavailabilityDialog({ open, onOpenChange, defaultDate, absence }: Props) {
+  const shown = useRetained(absence)
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        {open && <UnavailabilitySteps defaultDate={defaultDate} absence={absence} onDone={() => onOpenChange(false)} />}
+        <UnavailabilitySteps key={shown?.id ?? "new"} defaultDate={defaultDate} absence={shown} onDone={() => onOpenChange(false)} />
       </DialogContent>
     </Dialog>
   )
@@ -147,9 +148,9 @@ export function OpenCovers({ absence, onDone, mine = false }: { absence: Unavail
         <p className="text-sm text-muted-foreground">{t("absence.coversNone")}</p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {slots.data.map((slot, index) => {
+          {slots.data.map((slot) => {
             return (
-              <RevealItem key={slot.assignmentId} index={index} className="flex items-center gap-3 rounded-xl border p-2 pr-3">
+              <li key={slot.assignmentId} className="flex items-center gap-3 rounded-xl border p-2 pr-3">
                 <DateBlock date={slot.date} startTime={slot.startTime} className="w-12 py-1 [&>span:nth-child(2)]:text-xl" />
                 <span className="flex min-w-0 flex-1 items-center gap-2 text-sm">
                   <RoleIcon name={slot.roleName} className="size-4 shrink-0 text-muted-foreground" aria-hidden />
@@ -158,7 +159,7 @@ export function OpenCovers({ absence, onDone, mine = false }: { absence: Unavail
                     {ministries.size > 1 && <span className="text-muted-foreground"> · {slot.ministryName}</span>}
                   </span>
                 </span>
-              </RevealItem>
+              </li>
             )
           })}
         </ul>

@@ -8,6 +8,7 @@ import { useAppForm } from "@/components/form"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { api, type Unavailability } from "@/lib/api"
 import { toastError } from "@/lib/errors"
+import { useRetained } from "@/lib/use-retained"
 import { todayISO } from "@/lib/format"
 import { AbsenceFields, absenceDefaults, absenceInput, validateAbsence } from "@/features/schedules/absence-form"
 import { OpenCovers } from "@/features/schedules/unavailability-dialog"
@@ -19,9 +20,12 @@ type Props = {
 }
 
 export function MyAbsenceDialog({ open, onOpenChange, absence }: Props) {
+  const shown = useRetained(absence)
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>{open && <Steps absence={absence} onDone={() => onOpenChange(false)} />}</DialogContent>
+      <DialogContent>
+        <Steps key={shown?.id ?? "new"} absence={shown} onDone={() => onOpenChange(false)} />
+      </DialogContent>
     </Dialog>
   )
 }

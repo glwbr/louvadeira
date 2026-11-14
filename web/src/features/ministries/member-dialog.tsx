@@ -28,7 +28,7 @@ export function MemberDialog({ open, onOpenChange, ministry, member, people }: P
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent autoFocusFirst={!member}>
-        {open && <MemberForm ministry={ministry} member={member} people={people} onDone={() => onOpenChange(false)} />}
+        <MemberForm key={member?.personId ?? "new"} ministry={ministry} member={member} people={people} onDone={() => onOpenChange(false)} />
       </DialogContent>
     </Dialog>
   )

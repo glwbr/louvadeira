@@ -22,7 +22,7 @@ export function CommunionDialog({ open, onOpenChange, services, current }: Props
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        {open && <CommunionForm services={services} current={current} onDone={() => onOpenChange(false)} />}
+        <CommunionForm services={services} current={current} onDone={() => onOpenChange(false)} />
       </DialogContent>
     </Dialog>
   )

@@ -19,7 +19,7 @@ type Props = {
 export function RoleDialog({ open, onOpenChange, ministryId, role }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent autoFocusFirst={!role}>{open && <RoleForm ministryId={ministryId} role={role} onDone={() => onOpenChange(false)} />}</DialogContent>
+      <DialogContent autoFocusFirst={!role}><RoleForm key={role?.id ?? "new"} ministryId={ministryId} role={role} onDone={() => onOpenChange(false)} /></DialogContent>
     </Dialog>
   )
 }

@@ -22,6 +22,7 @@ import {
   type Unavailability,
 } from "@/lib/api"
 import { toastError } from "@/lib/errors"
+import { useRetained } from "@/lib/use-retained"
 import { absenceCovers, absenceLabel, dayAndTime, firstName, initials, reasonLabel, todayISO } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
@@ -41,12 +42,14 @@ type Props = {
 }
 
 export function SlotDialog({ selection, onClose, ministry, month, published, unavailabilities }: Props) {
+  const shown = useRetained(selection)
   return (
     <Dialog open={Boolean(selection)} onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
-        {selection && (
+        {shown && (
           <SlotPicker
-            selection={selection}
+            key={shown.slot.assignmentId}
+            selection={shown}
             ministry={ministry}
             month={month}
             published={published}

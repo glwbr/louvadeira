@@ -20,7 +20,7 @@ type Props = {
 export function MinistryDialog({ open, onOpenChange, ministry }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent autoFocusFirst={!ministry}>{open && <MinistryForm ministry={ministry} onDone={() => onOpenChange(false)} />}</DialogContent>
+      <DialogContent autoFocusFirst={!ministry}><MinistryForm key={ministry?.id ?? "new"} ministry={ministry} onDone={() => onOpenChange(false)} /></DialogContent>
     </Dialog>
   )
 }

@@ -19,7 +19,7 @@ export function ServiceDialog({ open, onOpenChange, service }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent autoFocusFirst={!service}>
-        {open && <ServiceForm service={service} onDone={() => onOpenChange(false)} />}
+        <ServiceForm key={service?.id ?? "new"} service={service} onDone={() => onOpenChange(false)} />
       </DialogContent>
     </Dialog>
   )
