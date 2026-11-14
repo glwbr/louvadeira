@@ -91,7 +91,7 @@ function UnavailabilityForm({ defaultDate, onSaved }: { defaultDate: string; onS
         </form.AppField>
         <AbsenceFields form={form} />
         <DialogFooter>
-          <form.SubmitButton pendingLabel={t("absence.saving")}>{t("common.save")}</form.SubmitButton>
+          <form.SubmitButton pendingLabel={t("common.saving")}>{t("common.save")}</form.SubmitButton>
         </DialogFooter>
       </form.Form>
     </form.AppForm>

@@ -52,15 +52,26 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  autoFocusFirst = true,
+  onOpenAutoFocus,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
+  /** NOTE: false keeps focus on the dialog itself, so editing on a phone does not open the keyboard at once. */
+  autoFocusFirst?: boolean
 }) {
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
+        onOpenAutoFocus={(event) => {
+          onOpenAutoFocus?.(event)
+          if (!autoFocusFirst && !event.defaultPrevented) {
+            event.preventDefault()
+            ;(event.currentTarget as HTMLElement).focus({ preventScroll: true })
+          }
+        }}
         className={cn(
           "fixed inset-x-0 bottom-0 z-50 grid max-h-[92svh] w-full gap-5 overflow-y-auto rounded-t-3xl bg-popover p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] text-sm text-popover-foreground shadow-[0_-12px_40px_oklch(0_0_0/0.35)] ring-1 ring-foreground/10 duration-300 ease-(--ease-out-expo) outline-none data-open:animate-in data-open:fade-in-0 data-open:slide-in-from-bottom data-closed:animate-out data-closed:fade-out-0 data-closed:slide-out-to-bottom data-closed:duration-150 sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:max-h-[85svh] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:pb-5 sm:shadow-[0_24px_64px_oklch(0_0_0/0.4)] sm:data-open:slide-in-from-bottom-4 sm:data-open:zoom-in-95 sm:data-closed:slide-out-to-bottom-2 sm:data-closed:zoom-out-95 sm:max-w-md",
           className

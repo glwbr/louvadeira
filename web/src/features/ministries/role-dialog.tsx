@@ -1,13 +1,12 @@
+import { revalidateLogic } from "@tanstack/react-form"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { useState, type FormEvent } from "react"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
 import { ConfirmButton } from "@/components/confirm-button"
-import { Button } from "@/components/ui/button"
+import { useAppForm } from "@/components/form"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { api, queryKeys, type Role } from "@/lib/api"
+import { api, queryKeys, type Role, type RoleInput } from "@/lib/api"
 import { toastError } from "@/lib/errors"
 
 type Props = {
@@ -20,22 +19,20 @@ type Props = {
 export function RoleDialog({ open, onOpenChange, ministryId, role }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        {open && <RoleForm ministryId={ministryId} role={role} onDone={() => onOpenChange(false)} />}
-      </DialogContent>
+      <DialogContent autoFocusFirst={!role}>{open && <RoleForm ministryId={ministryId} role={role} onDone={() => onOpenChange(false)} />}</DialogContent>
     </Dialog>
   )
 }
 
-function RoleForm({ ministryId, role, onDone }: { ministryId: number; role?: Role; onDone: () => void }) {
-  const queryClient = useQueryClient()
-  const [name, setName] = useState(role?.name ?? "")
-  const [slots, setSlots] = useState(String(role?.slots ?? 1))
+const MAX_SLOTS = 20
 
+function RoleForm({ ministryId, role, onDone }: { ministryId: number; role?: Role; onDone: () => void }) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
   const refresh = () => queryClient.invalidateQueries({ queryKey: queryKeys.ministry(ministryId) })
+
   const save = useMutation({
-    mutationFn: async () => {
-      const input = { name, slots: Number(slots) }
+    mutationFn: async (input: RoleInput) => {
       if (role) {
         await api.ministries.updateRole(ministryId, role.id, input)
       } else {
@@ -44,7 +41,7 @@ function RoleForm({ ministryId, role, onDone }: { ministryId: number; role?: Rol
     },
     onSuccess: () => {
       refresh()
-      toast.success(role ? "Função atualizada" : "Função criada")
+      toast.success(role ? t("ministries.role.updated") : t("ministries.role.created"))
       onDone()
     },
     onError: toastError,
@@ -53,59 +50,70 @@ function RoleForm({ ministryId, role, onDone }: { ministryId: number; role?: Rol
     mutationFn: () => api.ministries.deleteRole(ministryId, role!.id),
     onSuccess: () => {
       refresh()
-      toast.success("Função removida")
+      toast.success(t("ministries.role.removed"))
       onDone()
     },
     onError: toastError,
   })
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    save.mutate()
-  }
+  const form = useAppForm({
+    defaultValues: { name: role?.name ?? "", slots: String(role?.slots ?? 1) },
+    validationLogic: revalidateLogic(),
+    validators: {
+      onDynamic: ({ value }) => {
+        const slots = Number(value.slots)
+        const fields: { name?: string; slots?: string } = {}
+        if (!value.name.trim()) {
+          fields.name = t("ministries.role.nameRequired")
+        }
+        if (!Number.isInteger(slots) || slots < 1 || slots > MAX_SLOTS) {
+          fields.slots = t("ministries.role.slotsInvalid")
+        }
+        return Object.keys(fields).length > 0 ? { fields } : undefined
+      },
+    },
+    onSubmit: async ({ value }) => {
+      await save.mutateAsync({ name: value.name.trim(), slots: Number(value.slots) }).catch(() => undefined)
+    },
+  })
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-4">
-      <DialogHeader>
-        <DialogTitle>{role ? "Editar função" : "Nova função"}</DialogTitle>
-        <DialogDescription>Voz, baixo, bateria, violão…</DialogDescription>
-      </DialogHeader>
-      <div className="grid gap-2">
-        <Label htmlFor="role-name">Nome</Label>
-        <Input id="role-name" value={name} onChange={(e) => setName(e.target.value)} autoFocus required />
-      </div>
-      <div className="grid gap-2">
-        <Label htmlFor="role-slots">Vagas por escala</Label>
-        <Input
-          id="role-slots"
-          type="number"
-          inputMode="numeric"
-          min={1}
-          max={20}
-          value={slots}
-          onChange={(e) => setSlots(e.target.value)}
-          required
-        />
-        <p className="text-xs text-muted-foreground">
-          Quantas pessoas fazem essa função em cada escala, contando quem é fixo. Ex.: 3 vozes.
-        </p>
-      </div>
-      <DialogFooter className="gap-2 sm:justify-between">
-        {role ? (
-          <ConfirmButton
-            label="Remover"
-            title={`Remover a função ${role.name}?`}
-            description="Quem faz essa função perde o vínculo com ela neste ministério."
-            onConfirm={() => remove.mutate()}
-            pending={remove.isPending}
-          />
-        ) : (
-          <span />
-        )}
-        <Button type="submit" disabled={save.isPending}>
-          {save.isPending ? "Salvando…" : "Salvar"}
-        </Button>
-      </DialogFooter>
-    </form>
+    <form.AppForm>
+      <form.Form>
+        <DialogHeader>
+          <DialogTitle>{role ? t("ministries.role.editTitle") : t("ministries.role.newTitle")}</DialogTitle>
+          <DialogDescription>{t("ministries.role.lead")}</DialogDescription>
+        </DialogHeader>
+        <form.AppField name="name">
+          {(field) => <field.TextField label={t("ministries.role.name")} autoFocus={!role} autoComplete="off" />}
+        </form.AppField>
+        <form.AppField name="slots">
+          {(field) => (
+            <field.TextField
+              label={t("ministries.role.slots")}
+              hint={t("ministries.role.slotsHint")}
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={MAX_SLOTS}
+            />
+          )}
+        </form.AppField>
+        <DialogFooter className="sm:justify-between">
+          {role ? (
+            <ConfirmButton
+              label={t("ministries.role.remove")}
+              title={t("ministries.role.removeTitle", { name: role.name })}
+              description={t("ministries.role.removeLead")}
+              onConfirm={() => remove.mutate()}
+              pending={remove.isPending}
+            />
+          ) : (
+            <span className="hidden sm:block" />
+          )}
+          <form.SubmitButton pendingLabel={t("common.saving")}>{t("common.save")}</form.SubmitButton>
+        </DialogFooter>
+      </form.Form>
+    </form.AppForm>
   )
 }
