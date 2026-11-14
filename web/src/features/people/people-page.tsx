@@ -1,9 +1,11 @@
+import { useStore } from "@tanstack/react-form"
 import { useQuery } from "@tanstack/react-query"
 import { ChevronRight, Plus, Search, SearchX, ShieldCheck, Users, X } from "lucide-react"
 import { useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 
 import { EmptyState } from "@/components/empty-state"
+import { useAppForm } from "@/components/form"
 import { ErrorState } from "@/components/error-state"
 import { ListSkeleton } from "@/components/list-skeleton"
 import { RevealItem } from "@/components/motion"
@@ -22,7 +24,9 @@ export function PeoplePage() {
   const { t } = useTranslation()
   const people = useQuery({ queryKey: queryKeys.people, queryFn: api.people.list })
   const me = useQuery({ queryKey: queryKeys.me, queryFn: api.me })
-  const [search, setSearch] = useState("")
+  const filter = useAppForm({ defaultValues: { search: "" } })
+  const search = useStore(filter.store, (state) => state.values.search)
+  const setSearch = (value: string) => filter.setFieldValue("search", value)
   const [editing, setEditing] = useState<Person | undefined>()
   const [open, setOpen] = useState(false)
 
@@ -53,14 +57,18 @@ export function PeoplePage() {
       {(people.data?.length ?? 0) >= SEARCH_FROM && (
         <div className="relative mb-4">
           <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="search"
-            className="h-11 rounded-xl pr-11 pl-10"
-            aria-label={t("people.search")}
-            placeholder={t("people.search")}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          <filter.Field name="search">
+            {(field) => (
+              <Input
+                type="search"
+                className="h-11 rounded-xl pr-11 pl-10"
+                aria-label={t("people.search")}
+                placeholder={t("people.search")}
+                value={field.state.value}
+                onChange={(e) => field.handleChange(e.target.value)}
+              />
+            )}
+          </filter.Field>
           {search && (
             <Button
               variant="ghost"
