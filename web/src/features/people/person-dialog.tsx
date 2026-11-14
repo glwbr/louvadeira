@@ -1,16 +1,16 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { MessageCircle } from "lucide-react"
-import { useState, type FormEvent } from "react"
+import { revalidateLogic } from "@tanstack/react-form"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Loader2, MessageCircle } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
+import { ConfirmButton } from "@/components/confirm-button"
+import { useAppForm } from "@/components/form"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { ConfirmButton } from "@/components/confirm-button"
-import { api, queryKeys, type Person } from "@/lib/api"
+import { api, queryKeys, type Person, type PersonInput } from "@/lib/api"
 import { toastError } from "@/lib/errors"
-import { firstName, formatPhone } from "@/lib/format"
+import { firstName, formatPhone, maskPhone, phoneDigits } from "@/lib/format"
 
 type Props = {
   open: boolean
@@ -22,7 +22,7 @@ type Props = {
 export function PersonDialog({ open, onOpenChange, person, canArchive }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent autoFocusFirst={!person}>
         {open && <PersonForm person={person} canArchive={canArchive} onDone={() => onOpenChange(false)} />}
       </DialogContent>
     </Dialog>
@@ -30,85 +30,121 @@ export function PersonDialog({ open, onOpenChange, person, canArchive }: Props) 
 }
 
 function PersonForm({ person, canArchive, onDone }: { person?: Person; canArchive?: boolean; onDone: () => void }) {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [name, setName] = useState(person?.name ?? "")
-  const [phone, setPhone] = useState(person ? formatPhone(person.phone) : "")
+  const health = useQuery({ queryKey: queryKeys.health, queryFn: api.health, meta: { background: true } })
+  const savedPhone = person ? formatPhone(person.phone) : ""
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: queryKeys.people })
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.people })
+    queryClient.invalidateQueries({ queryKey: queryKeys.ministries })
+  }
   const save = useMutation({
-    mutationFn: () => (person ? api.people.update(person.id, { name, phone }) : api.people.create({ name, phone })),
+    mutationFn: (input: PersonInput) => (person ? api.people.update(person.id, input) : api.people.create(input)),
     onSuccess: () => {
       refresh()
-      queryClient.invalidateQueries({ queryKey: queryKeys.ministries })
-      toast.success(person ? "Pessoa atualizada" : "Pessoa cadastrada")
+      toast.success(person ? t("people.dialog.updated") : t("people.dialog.created"))
       onDone()
     },
     onError: toastError,
   })
   const sendLink = useMutation({
     mutationFn: () => api.people.sendLink(person!.id),
-    onSuccess: () => toast.success(`Link enviado no WhatsApp de ${firstName(person!.name)}`),
+    onSuccess: () => toast.success(t("people.dialog.linkSent", { name: firstName(person!.name) })),
     onError: toastError,
   })
   const archive = useMutation({
     mutationFn: () => api.people.archive(person!.id),
     onSuccess: () => {
       refresh()
-      queryClient.invalidateQueries({ queryKey: queryKeys.ministries })
-      toast.success("Pessoa arquivada")
+      toast.success(t("people.dialog.archived"))
       onDone()
     },
     onError: toastError,
   })
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    save.mutate()
-  }
+  const form = useAppForm({
+    defaultValues: { name: person?.name ?? "", phone: savedPhone },
+    validationLogic: revalidateLogic(),
+    validators: {
+      onDynamic: ({ value }) => {
+        const fields: { name?: string; phone?: string } = {}
+        if (!value.name.trim()) {
+          fields.name = t("people.dialog.nameRequired")
+        }
+        const digits = phoneDigits(value.phone).length
+        if (value.phone && digits !== 10 && digits !== 11) {
+          fields.phone = t("people.dialog.phoneInvalid")
+        }
+        return Object.keys(fields).length > 0 ? { fields } : undefined
+      },
+    },
+    onSubmit: async ({ value }) => {
+      await save.mutateAsync({ name: value.name.trim(), phone: value.phone }).catch(() => undefined)
+    },
+  })
+
+  const whatsappOff = health.data?.whatsapp.mode === "off"
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-4">
-      <DialogHeader>
-        <DialogTitle>{person ? "Editar pessoa" : "Nova pessoa"}</DialogTitle>
-        <DialogDescription>O telefone é o WhatsApp que recebe as escalas.</DialogDescription>
-      </DialogHeader>
-      <div className="grid gap-2">
-        <Label htmlFor="person-name">Nome</Label>
-        <Input id="person-name" value={name} onChange={(e) => setName(e.target.value)} autoFocus required />
-      </div>
-      <div className="grid gap-2">
-        <Label htmlFor="person-phone">WhatsApp</Label>
-        <Input
-          id="person-phone"
-          type="tel"
-          inputMode="tel"
-          placeholder="(11) 98888-7777"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-        />
-      </div>
-      {person?.phone && (
-        <Button type="button" variant="outline" disabled={sendLink.isPending} onClick={() => sendLink.mutate()}>
-          <MessageCircle />
-          {sendLink.isPending ? "Enviando…" : "Mandar link de acesso no WhatsApp"}
-        </Button>
-      )}
-      <DialogFooter className="gap-2 sm:justify-between">
-        {person && canArchive ? (
-          <ConfirmButton
-            label="Arquivar"
-            title={`Arquivar ${person.name}?`}
-            description="A pessoa sai de todos os ministérios e não aparece mais nas listas."
-            onConfirm={() => archive.mutate()}
-            pending={archive.isPending}
-          />
-        ) : (
-          <span />
+    <form.AppForm>
+      <form.Form>
+        <DialogHeader>
+          <DialogTitle>{person ? t("people.dialog.editTitle") : t("people.dialog.newTitle")}</DialogTitle>
+          <DialogDescription>{t("people.dialog.lead")}</DialogDescription>
+        </DialogHeader>
+        <form.AppField name="name">
+          {(field) => <field.TextField label={t("people.dialog.name")} autoFocus={!person} autoComplete="off" />}
+        </form.AppField>
+        <form.AppField name="phone">
+          {(field) => (
+            <field.TextField
+              label={t("people.dialog.phone")}
+              type="tel"
+              inputMode="tel"
+              autoComplete="off"
+              placeholder={t("people.dialog.phonePlaceholder")}
+              format={maskPhone}
+            />
+          )}
+        </form.AppField>
+        {person?.phone && (
+          <form.Subscribe selector={(state) => state.values.phone !== savedPhone}>
+            {(phoneChanged) => (
+              <div className="flex flex-col gap-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={sendLink.isPending || phoneChanged || whatsappOff}
+                  onClick={() => sendLink.mutate()}
+                >
+                  {sendLink.isPending ? <Loader2 className="animate-spin" /> : <MessageCircle />}
+                  {sendLink.isPending ? t("people.dialog.sendingLink") : t("people.dialog.sendLink")}
+                </Button>
+                {(phoneChanged || whatsappOff) && (
+                  <p className="text-xs text-pretty text-muted-foreground">
+                    {phoneChanged ? t("people.dialog.saveFirst") : t("people.dialog.whatsappOff")}
+                  </p>
+                )}
+              </div>
+            )}
+          </form.Subscribe>
         )}
-        <Button type="submit" disabled={save.isPending}>
-          {save.isPending ? "Salvando…" : "Salvar"}
-        </Button>
-      </DialogFooter>
-    </form>
+        <DialogFooter className="sm:justify-between">
+          {person && canArchive ? (
+            <ConfirmButton
+              label={t("people.dialog.archive")}
+              title={t("people.dialog.archiveTitle", { name: person.name })}
+              description={t("people.dialog.archiveLead")}
+              onConfirm={() => archive.mutate()}
+              pending={archive.isPending}
+            />
+          ) : (
+            <span className="hidden sm:block" />
+          )}
+          <form.SubmitButton pendingLabel={t("common.saving")}>{t("common.save")}</form.SubmitButton>
+        </DialogFooter>
+      </form.Form>
+    </form.AppForm>
   )
 }
