@@ -249,3 +249,52 @@ func TestEnsureAdminPromotesAnExistingPerson(t *testing.T) {
 		t.Fatalf("admin = %+v, err = %v", admin, err)
 	}
 }
+
+func TestCommunionIsOneServiceAMonth(t *testing.T) {
+	s, ctx := newStore(t), context.Background()
+	morning, _ := s.CreateService(ctx, store.ServiceInput{Name: "Domingo de manhã", Weekday: 0, StartTime: "09:00"})
+	evening, _ := s.CreateService(ctx, store.ServiceInput{Name: "Domingo à noite", Weekday: 0, StartTime: "19:00"})
+	weeks := func() (*int, *int) {
+		list, err := s.ListServices(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		byID := map[int64]*int{}
+		for _, sv := range list {
+			byID[sv.ID] = sv.CommunionWeek
+		}
+		return byID[morning.ID], byID[evening.ID]
+	}
+	first, third := 1, 3
+
+	if err := s.SetCommunion(ctx, &morning.ID, &first); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetCommunion(ctx, &evening.ID, &third); err != nil {
+		t.Fatal(err)
+	}
+	if m, e := weeks(); m != nil || e == nil || *e != 3 {
+		t.Fatalf("choosing the evening should clear the morning: morning = %v, evening = %v", m, e)
+	}
+	if err := s.SetCommunion(ctx, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if m, e := weeks(); m != nil || e != nil {
+		t.Fatalf("no communion left: morning = %v, evening = %v", m, e)
+	}
+
+	fifth := 5
+	if err := s.SetCommunion(ctx, &evening.ID, &fifth); !isValidation(err) {
+		t.Errorf("week 5: err = %v", err)
+	}
+	if err := s.SetCommunion(ctx, &evening.ID, nil); !isValidation(err) {
+		t.Errorf("missing week: err = %v", err)
+	}
+	missing := int64(999)
+	if err := s.SetCommunion(ctx, &missing, &first); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("unknown service: err = %v", err)
+	}
+	if m, e := weeks(); m != nil || e != nil {
+		t.Fatalf("a failed choice must not clear anything: morning = %v, evening = %v", m, e)
+	}
+}

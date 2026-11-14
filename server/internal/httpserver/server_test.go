@@ -478,3 +478,27 @@ func TestAbsenceOffersSwapsForTheWholePeriod(t *testing.T) {
 		t.Fatalf("after opening swaps the absence still lists %+v", list)
 	}
 }
+
+func TestCommunionIsChosenOnceForTheChurch(t *testing.T) {
+	h := newHarness(t)
+	rec := h.do(http.MethodPut, "/api/communion", `{"serviceId":null,"week":null}`)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous: %d", rec.Code)
+	}
+	h.signInAdmin()
+	service := decode[store.Service](t, h.do(http.MethodPost, "/api/services", `{"name":"Culto de domingo","weekday":0,"startTime":"19:00"}`))
+
+	if rec := h.do(http.MethodPut, "/api/communion", fmt.Sprintf(`{"serviceId":%d,"week":1}`, service.ID)); rec.Code != http.StatusNoContent {
+		t.Fatalf("set: %d %s", rec.Code, rec.Body)
+	}
+	services := decode[[]store.Service](t, h.do(http.MethodGet, "/api/services", ""))
+	if services[0].CommunionWeek == nil || *services[0].CommunionWeek != 1 {
+		t.Fatalf("services = %+v", services)
+	}
+	if rec := h.do(http.MethodPut, "/api/communion", fmt.Sprintf(`{"serviceId":%d,"week":9}`, service.ID)); rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad week: %d", rec.Code)
+	}
+	if rec := h.do(http.MethodPut, "/api/communion", `{"serviceId":999,"week":1}`); rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown service: %d", rec.Code)
+	}
+}

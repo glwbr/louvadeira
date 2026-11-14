@@ -66,6 +66,19 @@ func (d Deps) updateService(w http.ResponseWriter, r *http.Request) {
 	d.respond(w, http.StatusOK, service, err)
 }
 
+type communionRequest struct {
+	ServiceID *int64 `json:"serviceId"`
+	Week      *int   `json:"week"`
+}
+
+func (d Deps) setCommunion(w http.ResponseWriter, r *http.Request) {
+	var req communionRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	d.respond(w, http.StatusNoContent, nil, d.Store.SetCommunion(r.Context(), req.ServiceID, req.Week))
+}
+
 func (d Deps) listMinistries(w http.ResponseWriter, r *http.Request) {
 	ministries, err := d.Store.ListMinistries(r.Context())
 	d.respond(w, http.StatusOK, ministries, err)

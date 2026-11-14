@@ -88,6 +88,7 @@ func New(d Deps) http.Handler {
 	admin("GET /api/services", d.listServices)
 	admin("POST /api/services", d.createService)
 	admin("PUT /api/services/{id}", d.updateService)
+	admin("PUT /api/communion", d.setCommunion)
 
 	admin("GET /api/ministries", d.listMinistries)
 	admin("POST /api/ministries", d.createMinistry)

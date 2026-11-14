@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"time"
 )
 
@@ -90,4 +91,34 @@ func (s *Store) UpdateService(ctx context.Context, id int64, in ServiceInput) (S
 		"UPDATE services SET name = ?, weekday = ?, start_time = ?, active = ?, communion_week = ? WHERE id = ? RETURNING "+serviceColumns,
 		in.Name, in.Weekday, in.StartTime, boolInt(in.Active), in.CommunionWeek, id))
 	return sv, notFoundIfNoRows(err)
+}
+
+/**
+ * NOTE: The Lord's Supper happens in one service a month, so choosing a service clears any other; a nil service means
+ * none. A failed choice leaves the previous one in place.
+ */
+func (s *Store) SetCommunion(ctx context.Context, serviceID *int64, week *int) error {
+	if serviceID != nil && (week == nil || *week < 1 || *week > 4) {
+		return invalid("escolha a semana da Santa Ceia, de 1 a 4")
+	}
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, "UPDATE services SET communion_week = NULL WHERE communion_week IS NOT NULL"); err != nil {
+			return err
+		}
+		if serviceID == nil {
+			return nil
+		}
+		result, err := tx.ExecContext(ctx, "UPDATE services SET communion_week = ? WHERE id = ?", *week, *serviceID)
+		if err != nil {
+			return err
+		}
+		changed, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if changed == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
 }
