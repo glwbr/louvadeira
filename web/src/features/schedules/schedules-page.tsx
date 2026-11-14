@@ -454,7 +454,14 @@ function SlotChip({ slot, role, published, onClick }: { slot: ScheduleSlot; role
     >
       {published && !empty && <SlotStatusIcon status={slot.status} coverOpen={slot.coverOpen} />}
       <span className={cn("truncate", slot.status === "declined" && !slot.coverOpen && "text-muted-foreground")}>{name}</span>
-      {warning && <span className="shrink-0 text-xs opacity-90">· {warning}</span>}
+      {warning && (
+        <>
+          <TriangleAlert className="size-3.5 shrink-0 sm:hidden" aria-hidden />
+          <span className="hidden shrink-0 text-xs opacity-90 sm:inline" aria-hidden>
+            · {warning}
+          </span>
+        </>
+      )}
     </button>
   )
 }
