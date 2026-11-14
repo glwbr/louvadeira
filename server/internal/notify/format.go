@@ -77,10 +77,21 @@ func personNames(people []store.Person) []string {
 }
 
 /**
- * NOTE: "domingo 22/11, 19h" — how every message names a service.
+ * NOTE: "domingo, 22/11, às 19h" — how every message names a service.
  */
 func when(d store.AssignmentDetail) string {
-	return fmt.Sprintf("%s %s, %s", weekday(d.Date), dayMonth(d.Date), hour(d.StartTime))
+	return fmt.Sprintf("%s, %s, às %s", weekday(d.Date), dayMonth(d.Date), hour(d.StartTime))
+}
+
+/**
+ * NOTE: "no domingo", "na quinta": weekdays from Monday to Friday are feminine in Portuguese.
+ */
+func onWeekday(date string) string {
+	day := parseDate(date).Weekday()
+	if day == time.Saturday || day == time.Sunday {
+		return "no " + weekdays[day]
+	}
+	return "na " + weekdays[day]
 }
 
 func communionMark(communion bool) string {

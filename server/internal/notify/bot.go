@@ -25,11 +25,6 @@ const (
 	lastHour       = 21
 	reminderHour   = 10
 	pendingHour    = 9
-	optionConfirm  = "✅ Confirmo"
-	optionDecline  = "❌ Não posso"
-	optionNone     = "❌ Não posso em nenhum"
-	optionAccept   = "✅ Posso cobrir"
-	optionRefuse   = "❌ Não posso"
 	actionConfirm  = "confirm"
 	actionDecline  = "decline"
 	actionAccept   = "accept"
@@ -267,24 +262,19 @@ func (b *Bot) askConfirmation(ctx context.Context, slots []store.AssignmentDetai
 	var lines []string
 	var all []int64
 	for _, o := range occurrences {
-		lines = append(lines, fmt.Sprintf("• %s %s, %s — %s%s", capitalize(weekday(o.date)), dayMonth(o.date), hour(o.startTime),
-			joinNames(o.roles), communionMark(o.communion)))
+		lines = append(lines, confirmLine(o))
 		all = append(all, o.assignments...)
 	}
-	question := fmt.Sprintf("Paz, %s! Você está na escala do %s:\n%s\nConfirma?", firstName(first.PersonName), first.MinistryName, strings.Join(lines, "\n"))
+	question := confirmQuestion(first.PersonName, first.MinistryName, lines)
 
-	options := []store.PollOption{{Label: optionConfirm, Action: actionConfirm, Assignments: all}}
+	options := []store.PollOption{{Label: goingOption(len(occurrences)), Action: actionConfirm, Assignments: all}}
 	if len(occurrences) == 1 {
-		options = append(options, store.PollOption{Label: optionDecline, Action: actionDecline, Assignments: all})
+		options = append(options, store.PollOption{Label: optionNotGoing, Action: actionDecline, Assignments: all})
 	} else {
 		for _, o := range occurrences {
-			options = append(options, store.PollOption{
-				Label:       fmt.Sprintf("%s %s %s", optionDecline, weekday(o.date), dayMonth(o.date)),
-				Action:      actionDecline,
-				Assignments: o.assignments,
-			})
+			options = append(options, store.PollOption{Label: notGoingOption(o.date), Action: actionDecline, Assignments: o.assignments})
 		}
-		options = append(options, store.PollOption{Label: optionNone, Action: actionDecline, Assignments: all})
+		options = append(options, store.PollOption{Label: optionNotGoingAny, Action: actionDecline, Assignments: all})
 	}
 	return b.sendPoll(ctx, store.PollConfirm, store.Person{ID: first.PersonID, Name: first.PersonName, Phone: first.Phone}, question, options, false)
 }
@@ -320,12 +310,7 @@ func (b *Bot) sendReminders(ctx context.Context, upcoming []store.AssignmentDeta
 		for i, slot := range slots {
 			roles[i] = slot.RoleName
 		}
-		text := fmt.Sprintf("Lembrete 🎶 Amanhã (%s %s) tem culto às %s e você está na escala do %s: %s.",
-			weekday(d.Date), dayMonth(d.Date), hour(d.StartTime), d.MinistryName, joinNames(roles))
-		if d.Communion {
-			text += " É dia de Santa Ceia 🍷"
-		}
-		if !b.send(ctx, d.Phone, text) {
+		if !b.send(ctx, d.Phone, reminderText(d, roles)) {
 			_ = b.Store.UnmarkNotified(ctx, mark)
 		}
 	}
@@ -363,7 +348,7 @@ func (b *Bot) alertPending(ctx context.Context, upcoming []store.AssignmentDetai
 			continue
 		}
 		d := sample[k]
-		b.tellLeaders(ctx, k.ministry, fmt.Sprintf("⏳ Ainda não confirmaram para %s (%s): %s.", when(d), d.MinistryName, joinNames(pending[k])))
+		b.tellLeaders(ctx, k.ministry, pendingAlert(d, pending[k]))
 	}
 }
 
@@ -475,8 +460,7 @@ func (b *Bot) confirm(ctx context.Context, person store.Person, assignments []in
 		result, err := b.Store.WithdrawDecline(ctx, id, person.ID, b.now())
 		if errors.Is(err, store.ErrCoverClosed) {
 			if d, err := b.Store.AssignmentDetail(ctx, id); err == nil && d.PersonID != person.ID {
-				b.send(ctx, person.Phone, fmt.Sprintf("A vaga de %s (%s) já foi coberta por %s. Se quiser voltar, fale com a liderança.",
-					when(d), d.RoleName, d.PersonName))
+				b.send(ctx, person.Phone, comebackTakenReply(d))
 			}
 			continue
 		}
@@ -487,12 +471,12 @@ func (b *Bot) confirm(ctx context.Context, person store.Person, assignments []in
 		confirmed = true
 		d := result.Assignment
 		for _, waiting := range result.Waiting {
-			b.send(ctx, waiting.Phone, fmt.Sprintf("Não precisa mais cobrir %s (%s): %s vai servir. Obrigado!", when(d), d.RoleName, person.Name))
+			b.send(ctx, waiting.Phone, comebackReleased(waiting.Name, person.Name, d))
 		}
-		b.tellLeaders(ctx, d.MinistryID, fmt.Sprintf("↩️ %s voltou atrás e vai servir em %s (%s, %s).", person.Name, when(d), d.RoleName, d.MinistryName))
+		b.tellLeaders(ctx, d.MinistryID, comebackAlert(person.Name, d))
 	}
 	if confirmed {
-		b.send(ctx, person.Phone, fmt.Sprintf("Obrigado, %s! Presença confirmada 🙌", firstName(person.Name)))
+		b.send(ctx, person.Phone, confirmedReply(person.Name))
 	}
 }
 
@@ -568,12 +552,12 @@ func (b *Bot) SendTestPoll(ctx context.Context, to messenger.Address) (messenger
 		return "", errors.New("WhatsApp desligado")
 	}
 	options := []store.PollOption{
-		{Label: optionConfirm, Action: actionTestPoll},
-		{Label: optionDecline + " quinta", Action: actionTestPoll},
-		{Label: optionDecline + " domingo", Action: actionTestPoll},
-		{Label: optionNone, Action: actionTestPoll},
+		{Label: optionGoingBoth, Action: actionTestPoll},
+		{Label: "😕 Não consigo na quinta", Action: actionTestPoll},
+		{Label: "😕 Não consigo no domingo", Action: actionTestPoll},
+		{Label: optionNotGoingAny, Action: actionTestPoll},
 	}
-	question := "Teste da louvadeira 🎶 Imagine que esta é a confirmação da escala da semana. Vote, depois mude o voto e depois retire o voto."
+	question := "Teste da louvadeira 🎶 Imagine que esta é a confirmação da escala da semana. Responda, depois mude a resposta e depois tire a resposta."
 	id, err := b.Messenger.SendPoll(ctx, to, messenger.Poll{Question: question, Options: labelsOf(options)})
 	if err != nil {
 		return "", err

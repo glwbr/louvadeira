@@ -26,34 +26,34 @@ func TestDecliningTheWholeWeekSendsOneInviteWithBothServices(t *testing.T) {
 	poll := w.fake.sentPollFor(t, w.phone(bassist), "19/11")
 	w.fake.reset()
 
-	w.vote(poll, "❌ Não posso em nenhum", false)
+	w.vote(poll, "😕 Não consigo em nenhum", false)
 	invites := polls(w.fake.to(w.phone(other)))
 	if len(invites) != 1 {
 		t.Fatalf("%s got %d invites, want one for both services", other, len(invites))
 	}
 	invite := invites[0]
-	want := []string{"✅ quinta 19/11", "✅ domingo 22/11", "❌ Não posso em nenhum"}
+	want := []string{"✅ Quinta, 19/11", "✅ Domingo, 22/11", "😕 Nenhum dessa vez"}
 	if !invite.multiple || strings.Join(invite.options, "|") != strings.Join(want, "|") {
 		t.Fatalf("invite multiple=%v options=%v", invite.multiple, invite.options)
 	}
 	leader := w.fake.to(w.phone("Líder"))
-	if len(leader) != 1 || !strings.Contains(leader[0].text, "• quinta 19/11, 19h30 (Baixo) — convidei "+other) ||
-		!strings.Contains(leader[0].text, "• domingo 22/11, 19h (Baixo) — convidei "+other) {
+	if len(leader) != 1 || !strings.Contains(leader[0].text, "• quinta, 19/11, às 19h30 (Baixo) — chamei "+other) ||
+		!strings.Contains(leader[0].text, "• domingo, 22/11, às 19h (Baixo) — chamei "+other) {
 		t.Fatalf("leader messages = %+v", leader)
 	}
 
 	w.fake.reset()
-	w.tick(invite, false, "✅ quinta 19/11", "✅ domingo 22/11")
+	w.tick(invite, false, "✅ Quinta, 19/11", "✅ Domingo, 22/11")
 	for _, date := range []string{"2026-11-19", "2026-11-22"} {
 		if slot := w.slotOf(date, "Baixo"); slot.PersonName != other || slot.Status != store.AssignmentConfirmed || slot.CoverOpen {
 			t.Fatalf("%s slot = %+v", date, slot)
 		}
 	}
-	both := "quinta 19/11, 19h30 (Baixo) e domingo 22/11, 19h (Baixo)"
-	if absent := w.fake.to(w.phone(bassist)); len(absent) != 1 || !strings.Contains(absent[0].text, other+" vai cobrir você em "+both) {
+	both := "quinta, 19/11, às 19h30 (Baixo) e domingo, 22/11, às 19h (Baixo)"
+	if absent := w.fake.to(w.phone(bassist)); len(absent) != 1 || !strings.Contains(absent[0].text, other+" vai ficar no seu lugar: "+both) {
 		t.Fatalf("absent messages = %+v", absent)
 	}
-	if swaps := w.fake.to(group); len(swaps) != 1 || !strings.Contains(swaps[0].text, other+" cobre "+bassist+" em "+both) {
+	if swaps := w.fake.to(group); len(swaps) != 1 || !strings.Contains(swaps[0].text, other+" substitui "+bassist+" — "+both) {
 		t.Fatalf("group messages = %+v", swaps)
 	}
 }
@@ -63,23 +63,23 @@ func TestAnUntickedServiceCountsAsCannot(t *testing.T) {
 	w.bot.Tick(context.Background())
 	bassist := w.slotOf("2026-11-19", "Baixo").PersonName
 	other := map[string]string{"Edu": "Fred", "Fred": "Edu"}[bassist]
-	w.vote(w.fake.sentPollFor(t, w.phone(bassist), "19/11"), "❌ Não posso em nenhum", false)
+	w.vote(w.fake.sentPollFor(t, w.phone(bassist), "19/11"), "😕 Não consigo em nenhum", false)
 	invite := lastPoll(t, w.fake.to(w.phone(other)))
 	w.fake.reset()
 
-	w.tick(invite, false, "✅ quinta 19/11")
+	w.tick(invite, false, "✅ Quinta, 19/11")
 	if slot := w.slotOf("2026-11-19", "Baixo"); slot.PersonName != other {
 		t.Fatalf("thursday = %+v", slot)
 	}
 	if slot := w.slotOf("2026-11-22", "Baixo"); slot.PersonName != bassist || slot.CoverOpen {
 		t.Fatalf("sunday = %+v", slot)
 	}
-	if !containsText(w.fake.to(w.phone("Líder")), "Ninguém pôde cobrir "+bassist+" em domingo 22/11, 19h (Baixo, Louvor)") {
+	if !containsText(w.fake.to(w.phone("Líder")), "Ninguém conseguiu substituir "+bassist+" no Louvor: domingo, 22/11, às 19h (Baixo)") {
 		t.Fatalf("leader = %+v", w.fake.to(w.phone("Líder")))
 	}
 
 	w.fake.reset()
-	w.tick(invite, false, "✅ quinta 19/11")
+	w.tick(invite, false, "✅ Quinta, 19/11")
 	if len(w.fake.sent) != 0 {
 		t.Fatalf("the same vote again sent %+v", w.fake.sent)
 	}
@@ -122,7 +122,7 @@ func TestAbsenceOpensSwapsForEveryServiceInThePeriod(t *testing.T) {
 			continue
 		}
 		invited[m.to]++
-		if !strings.Contains(m.text, singer.Name+" não poderá servir no Louvor de 14/11 a 30/11") || strings.Contains(m.text, "saúde") {
+		if !strings.Contains(m.text, singer.Name+" não vai poder servir no Louvor de 14/11 a 30/11") || strings.Contains(m.text, "saúde") {
 			t.Fatalf("invite = %q", m.text)
 		}
 	}

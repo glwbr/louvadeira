@@ -3,7 +3,6 @@ package notify
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 
 	"louvadeira/internal/store"
@@ -173,31 +172,24 @@ func (b *Bot) inviteCovers(ctx context.Context, swaps []*swap, why absence) {
 func (b *Bot) sendInvite(ctx context.Context, candidate store.Person, offers []*swap, why absence) bool {
 	first := offers[0].detail
 	if len(offers) == 1 && why.period == "" {
-		question := fmt.Sprintf("Paz, %s! %s não poderá servir no %s em %s (%s). Você pode cobrir?",
-			firstName(candidate.Name), first.PersonName, first.MinistryName, when(first), first.RoleName)
 		options := []store.PollOption{
-			{Label: optionAccept, Action: actionAccept, Request: offers[0].request},
-			{Label: optionRefuse, Action: actionRefuse, Request: offers[0].request},
+			{Label: optionCanCover, Action: actionAccept, Request: offers[0].request},
+			{Label: optionCannotCover, Action: actionRefuse, Request: offers[0].request},
 		}
-		return b.sendPoll(ctx, store.PollCover, candidate, question, options, false)
+		return b.sendPoll(ctx, store.PollCover, candidate, coverQuestion(candidate.Name, first), options, false)
 	}
 
-	question := fmt.Sprintf("Paz, %s! %s não poderá servir no %s nestes cultos. Quais você pode cobrir? Marque todos que puder.",
-		firstName(candidate.Name), first.PersonName, first.MinistryName)
-	if why.period != "" {
-		question = fmt.Sprintf("Paz, %s! %s não poderá servir no %s %s. Quais destes cultos você pode cobrir? Marque todos que puder.",
-			firstName(candidate.Name), first.PersonName, first.MinistryName, why.period)
-	}
+	question := coverManyQuestion(candidate.Name, first, why.period)
 	labels := offerLabels(offers)
 	options := make([]store.PollOption, 0, len(offers)+1)
 	all := make([]int64, len(offers))
 	for i, s := range offers {
-		options = append(options, store.PollOption{Label: "✅ " + labels[i], Action: actionAccept, Request: s.request})
+		options = append(options, store.PollOption{Label: coverOption(labels[i]), Action: actionAccept, Request: s.request})
 		all[i] = s.request
 	}
-	none := optionNone
+	none := optionCoverNone
 	if len(offers) == 1 {
-		none = optionRefuse
+		none = optionCannotCover
 	}
 	options = append(options, store.PollOption{Label: none, Action: actionRefuse, Requests: all})
 	return b.sendPoll(ctx, store.PollCover, candidate, question, options, len(offers) > 1)
@@ -216,9 +208,9 @@ func offerLabels(offers []*swap) []string {
 	}
 	labels := make([]string, len(offers))
 	for i, s := range offers {
-		label := weekday(s.detail.Date) + " " + dayMonth(s.detail.Date)
+		label := weekday(s.detail.Date) + ", " + dayMonth(s.detail.Date)
 		if days[s.detail.Date] > 1 {
-			label += ", " + hour(s.detail.StartTime)
+			label += ", às " + hour(s.detail.StartTime)
 		}
 		if len(roles) > 1 {
 			label += " (" + s.detail.RoleName + ")"
@@ -244,42 +236,16 @@ func (b *Bot) alertDeclined(ctx context.Context, swaps []*swap, why absence) {
 
 		var alert string
 		if len(list) == 1 && why.period == "" {
-			s := list[0]
-			alert = fmt.Sprintf("⚠️ %s não pode servir em %s (%s, %s).", first.PersonName, when(first), first.RoleName, first.MinistryName)
-			if s.late {
-				alert += " Aviso com menos de 72h."
-			}
-			if len(s.invited) > 0 {
-				alert += " Convidei para cobrir: " + joinNames(s.invited) + "."
-			} else {
-				alert += " Ninguém da equipe está livre para cobrir; a vaga precisa de você."
-			}
+			alert = declinedAlert(first, list[0].late, list[0].invited)
 		} else {
-			where := "nestes cultos"
-			if why.period != "" {
-				where = why.period
-			}
-			lines := []string{fmt.Sprintf("⚠️ %s não pode servir no %s %s", first.PersonName, first.MinistryName, where)}
-			if why.reason != "" {
-				lines[0] += " (" + why.reason + ")"
-			}
-			lines[0] += ":"
+			lines := []string{declinedManyHeader(first, why)}
 			for _, s := range list {
-				line := "• " + slotText(s.detail)
-				if len(s.invited) > 0 {
-					line += " — convidei " + joinNames(s.invited)
-				} else {
-					line += " — ninguém livre para cobrir, a vaga precisa de você"
-				}
-				if s.late {
-					line += " ⏰ menos de 72h"
-				}
-				lines = append(lines, line)
+				lines = append(lines, declinedManyLine(s.detail, s.late, s.invited))
 			}
 			alert = strings.Join(lines, "\n")
 		}
 		if len(blocked) > 0 {
-			alert += "\n(Modo de teste não deixou convidar: " + joinNames(blocked) + ".)"
+			alert += blockedNote(blocked)
 		}
 		b.tellLeaders(ctx, ministry, alert)
 	}
@@ -295,11 +261,7 @@ func (b *Bot) thankAbsent(ctx context.Context, swaps []*swap) {
 			}
 		}
 	}
-	reply := fmt.Sprintf("Tudo bem, %s. Já avisei a liderança", firstName(first.PersonName))
-	if len(invited) > 0 {
-		reply += " e chamei " + joinNames(invited) + " para cobrir"
-	}
-	b.send(ctx, first.Phone, reply+". Obrigado por avisar!")
+	b.send(ctx, first.Phone, declinedReply(first.PersonName, invited))
 }
 
 /**
@@ -359,20 +321,14 @@ func (b *Bot) acceptCovers(ctx context.Context, substitute store.Person, request
 		}
 	}
 
-	switch {
-	case len(gone) == 0:
-	case len(requestIDs) == 1:
-		b.send(ctx, substitute.Phone, "Obrigado! Essa vaga já foi resolvida 🙏")
-	case len(gone) == 1:
-		b.send(ctx, substitute.Phone, fmt.Sprintf("Obrigado! A vaga de %s já foi resolvida 🙏", slotText(gone[0].Assignment)))
-	default:
-		b.send(ctx, substitute.Phone, fmt.Sprintf("Obrigado! As vagas de %s já foram resolvidas 🙏", joinNames(slotTexts(gone))))
+	if len(gone) > 0 {
+		b.send(ctx, substitute.Phone, goneReply(len(requestIDs) == 1, slotTexts(gone)))
 	}
 	if len(won) == 0 {
 		return
 	}
 
-	b.send(ctx, substitute.Phone, fmt.Sprintf("Valeu, %s! 🙏 Você está na escala de %s.", firstName(substitute.Name), joinNames(slotTexts(won))))
+	b.send(ctx, substitute.Phone, coveredReply(substitute.Name, slotTexts(won)))
 
 	type handover struct{ ministry, absent int64 }
 	handovers, byHandover := groupBy(won, func(r store.CoverResult) handover {
@@ -381,8 +337,8 @@ func (b *Bot) acceptCovers(ctx context.Context, substitute store.Person, request
 	for _, k := range handovers {
 		list := byHandover[k]
 		absent, d := list[0].Absent, list[0].Assignment
-		b.send(ctx, absent.Phone, fmt.Sprintf("%s vai cobrir você em %s. Obrigado por avisar!", substitute.Name, joinNames(slotTexts(list))))
-		swap := fmt.Sprintf("🔄 Troca no %s: %s cobre %s em %s.", d.MinistryName, substitute.Name, absent.Name, joinNames(slotTexts(list)))
+		b.send(ctx, absent.Phone, replacedNotice(absent.Name, substitute.Name, slotTexts(list)))
+		swap := swapAnnouncement(d.MinistryName, substitute.Name, absent.Name, slotTexts(list))
 		b.tellLeaders(ctx, d.MinistryID, swap)
 		if d.WhatsAppGroup != "" {
 			b.send(ctx, d.WhatsAppGroup, swap)
@@ -400,12 +356,7 @@ func (b *Bot) acceptCovers(ctx context.Context, substitute store.Person, request
 		}
 	}
 	for _, p := range waiting {
-		list := released[p.ID]
-		text := fmt.Sprintf("A vaga de %s já foi coberta por %s. Obrigado!", slotText(list[0].Assignment), substitute.Name)
-		if len(list) > 1 {
-			text = fmt.Sprintf("As vagas de %s já foram cobertas por %s. Obrigado!", joinNames(slotTexts(list)), substitute.Name)
-		}
-		b.send(ctx, p.Phone, text)
+		b.send(ctx, p.Phone, alreadyTakenReply(p.Name, substitute.Name, slotTexts(released[p.ID])))
 	}
 }
 
@@ -431,19 +382,14 @@ func (b *Bot) refuseCovers(ctx context.Context, person store.Person, requestIDs 
 		}
 	}
 	if refused && reply {
-		b.send(ctx, person.Phone, "Tudo bem, obrigado por responder!")
+		b.send(ctx, person.Phone, refusedReply())
 	}
 
 	type gap struct{ ministry, absent int64 }
 	gaps, byGap := groupBy(uncovered, func(r store.CoverResult) gap { return gap{r.Assignment.MinistryID, r.Absent.ID} })
 	for _, k := range gaps {
 		list := byGap[k]
-		absent, d := list[0].Absent, list[0].Assignment
-		text := fmt.Sprintf("❗ Ninguém pôde cobrir %s em %s (%s, %s). A vaga precisa de você.", absent.Name, when(d), d.RoleName, d.MinistryName)
-		if len(list) > 1 {
-			text = fmt.Sprintf("❗ Ninguém pôde cobrir %s no %s em %s. As vagas precisam de você.", absent.Name, d.MinistryName, joinNames(slotTexts(list)))
-		}
-		b.tellLeaders(ctx, k.ministry, text)
+		b.tellLeaders(ctx, k.ministry, uncoveredAlert(list[0].Assignment, list[0].Absent.Name, slotTexts(list)))
 	}
 }
 
