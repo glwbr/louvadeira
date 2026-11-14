@@ -17,6 +17,11 @@ func (r *recorder) SendText(_ context.Context, to messenger.Address, _ string) (
 	return "text-id", nil
 }
 
+func (r *recorder) SendMention(_ context.Context, to messenger.Address, _ string, _ []messenger.Address) (messenger.MessageID, error) {
+	r.sent = append(r.sent, to)
+	return "mention-id", nil
+}
+
 func (r *recorder) SendPoll(_ context.Context, to messenger.Address, _ messenger.Poll) (messenger.MessageID, error) {
 	r.sent = append(r.sent, to)
 	return "poll-id", nil

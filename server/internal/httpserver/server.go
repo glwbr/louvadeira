@@ -197,6 +197,8 @@ func (d Deps) testPoll(w http.ResponseWriter, r *http.Request) {
 type sendMessageRequest struct {
 	To   string `json:"to"`
 	Text string `json:"text"`
+	// NOTE: Phones to mark; each one appears in text as "@" plus its digits.
+	Mentions []string `json:"mentions"`
 }
 
 func (d Deps) sendMessage(w http.ResponseWriter, r *http.Request) {
@@ -212,7 +214,17 @@ func (d Deps) sendMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "WhatsApp desligado")
 		return
 	}
-	id, err := d.Messenger.SendText(r.Context(), messenger.Address(req.To), req.Text)
+	var id messenger.MessageID
+	var err error
+	if len(req.Mentions) > 0 {
+		mentioned := make([]messenger.Address, len(req.Mentions))
+		for i, phone := range req.Mentions {
+			mentioned[i] = messenger.Address(phone)
+		}
+		id, err = d.Messenger.SendMention(r.Context(), messenger.Address(req.To), req.Text, mentioned)
+	} else {
+		id, err = d.Messenger.SendText(r.Context(), messenger.Address(req.To), req.Text)
+	}
 	if errors.Is(err, messenger.ErrNotAllowed) {
 		writeError(w, http.StatusForbidden, err.Error())
 		return

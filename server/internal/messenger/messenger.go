@@ -30,6 +30,8 @@ type Poll struct {
 
 type Messenger interface {
 	SendText(ctx context.Context, to Address, text string) (MessageID, error)
+	// NOTE: SendMention marks people in a group message. Each one appears in text as "@" plus their phone digits.
+	SendMention(ctx context.Context, to Address, text string, mentioned []Address) (MessageID, error)
 	SendPoll(ctx context.Context, to Address, poll Poll) (MessageID, error)
 }
 
@@ -103,6 +105,13 @@ func (g allowlisted) SendText(ctx context.Context, to Address, text string) (Mes
 		return "", err
 	}
 	return g.next.SendText(ctx, to, text)
+}
+
+func (g allowlisted) SendMention(ctx context.Context, to Address, text string, mentioned []Address) (MessageID, error) {
+	if err := g.check(to); err != nil {
+		return "", err
+	}
+	return g.next.SendMention(ctx, to, text, mentioned)
 }
 
 func (g allowlisted) SendPoll(ctx context.Context, to Address, poll Poll) (MessageID, error) {

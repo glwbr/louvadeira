@@ -247,6 +247,45 @@ func (c *Client) SendText(ctx context.Context, to messenger.Address, text string
 	return messenger.MessageID(resp.ID), nil
 }
 
+/**
+ * NOTE: WhatsApp only highlights a mention when the text carries the same ID as the mention list, and a group in LID
+ * mode knows its members by LID, so each "@phone" is rewritten to the ID the group uses for that person.
+ */
+func (c *Client) SendMention(ctx context.Context, to messenger.Address, text string, mentioned []messenger.Address) (messenger.MessageID, error) {
+	jid, err := c.resolve(ctx, to)
+	if err != nil {
+		return "", err
+	}
+	lidGroup := false
+	if jid.Server == types.GroupServer {
+		if info, err := c.wm.GetGroupInfo(ctx, jid); err == nil {
+			lidGroup = info.AddressingMode == types.AddressingModeLID
+		}
+	}
+	jids := make([]string, 0, len(mentioned))
+	for _, person := range mentioned {
+		target, err := c.resolve(ctx, person)
+		if err != nil {
+			return "", fmt.Errorf("marcar %s: %w", person, err)
+		}
+		if lidGroup {
+			if lid, err := c.wm.Store.LIDs.GetLIDForPN(ctx, target); err == nil && !lid.IsEmpty() {
+				target = lid
+			}
+		}
+		text = strings.ReplaceAll(text, "@"+string(person.Normalize()), "@"+target.User)
+		jids = append(jids, target.String())
+	}
+	resp, err := c.wm.SendMessage(ctx, jid, &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+		Text:        proto.String(text),
+		ContextInfo: &waE2E.ContextInfo{MentionedJID: jids},
+	}})
+	if err != nil {
+		return "", fmt.Errorf("enviar mensagem: %w", err)
+	}
+	return messenger.MessageID(resp.ID), nil
+}
+
 func (c *Client) SendPoll(ctx context.Context, to messenger.Address, poll messenger.Poll) (messenger.MessageID, error) {
 	jid, err := c.resolve(ctx, to)
 	if err != nil {

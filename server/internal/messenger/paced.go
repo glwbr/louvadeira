@@ -33,6 +33,16 @@ func (p *paced) SendText(ctx context.Context, to Address, text string) (MessageI
 	return p.next.SendText(ctx, to, text)
 }
 
+func (p *paced) SendMention(ctx context.Context, to Address, text string, mentioned []Address) (MessageID, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if err := p.wait(ctx); err != nil {
+		return "", err
+	}
+	defer p.sent()
+	return p.next.SendMention(ctx, to, text, mentioned)
+}
+
 func (p *paced) SendPoll(ctx context.Context, to Address, poll Poll) (MessageID, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

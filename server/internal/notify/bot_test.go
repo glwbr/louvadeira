@@ -37,6 +37,10 @@ func (f *fakeMessenger) SendText(_ context.Context, to messenger.Address, text s
 	return messenger.MessageID(id), nil
 }
 
+func (f *fakeMessenger) SendMention(ctx context.Context, to messenger.Address, text string, _ []messenger.Address) (messenger.MessageID, error) {
+	return f.SendText(ctx, to, text)
+}
+
 func (f *fakeMessenger) SendPoll(_ context.Context, to messenger.Address, poll messenger.Poll) (messenger.MessageID, error) {
 	f.next++
 	id := fmt.Sprintf("poll-%d", f.next)

@@ -48,6 +48,11 @@ func (f *fakeMessenger) SendText(_ context.Context, _ messenger.Address, text st
 	return "", nil
 }
 
+func (f *fakeMessenger) SendMention(_ context.Context, _ messenger.Address, text string, _ []messenger.Address) (messenger.MessageID, error) {
+	f.texts = append(f.texts, text)
+	return "", nil
+}
+
 func (f *fakeMessenger) SendPoll(_ context.Context, to messenger.Address, _ messenger.Poll) (messenger.MessageID, error) {
 	f.polls = append(f.polls, to)
 	return "poll-1", nil
