@@ -212,6 +212,50 @@ func (s *Store) SavePoll(ctx context.Context, poll Poll, now time.Time) error {
 	return err
 }
 
+/**
+ * NOTE: The latest cover polls sent to a person, newest first, to fold a new swap into an invitation they already
+ * have instead of sending another one.
+ */
+func (s *Store) PersonCoverPolls(ctx context.Context, personID int64) ([]Poll, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT message_id, kind, person_id, options FROM polls
+		WHERE person_id = ? AND kind = 'cover' ORDER BY created_at DESC LIMIT 20`, personID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var polls []Poll
+	for rows.Next() {
+		var poll Poll
+		var options string
+		if err := rows.Scan(&poll.MessageID, &poll.Kind, &poll.PersonID, &options); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(options), &poll.Options); err != nil {
+			return nil, err
+		}
+		polls = append(polls, poll)
+	}
+	return polls, rows.Err()
+}
+
+func (s *Store) UpdatePollOptions(ctx context.Context, messageID string, options []PollOption) error {
+	encoded, err := json.Marshal(options)
+	if err != nil {
+		return err
+	}
+	return requireAffected(s.db.ExecContext(ctx, "UPDATE polls SET options = ? WHERE message_id = ?", string(encoded), messageID))
+}
+
+/**
+ * NOTE: How a person answered an invitation: "yes", "no", or "" while they have not answered.
+ */
+func (s *Store) InviteAnswer(ctx context.Context, requestID, personID int64) string {
+	var answer sql.NullString
+	_ = s.db.QueryRowContext(ctx, "SELECT answer FROM cover_invites WHERE request_id = ? AND person_id = ?", requestID, personID).Scan(&answer)
+	return answer.String
+}
+
 func (s *Store) Poll(ctx context.Context, messageID string) (Poll, error) {
 	var poll Poll
 	var options string

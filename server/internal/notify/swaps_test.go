@@ -179,57 +179,59 @@ func TestRepeatingAbsenceOnlyCountsMatchingDays(t *testing.T) {
 	}
 }
 
-func TestNobodyTakesTwoPlacesInTheSameService(t *testing.T) {
+func TestTwoAwayFromOneServiceMeansOneInvitationEach(t *testing.T) {
 	w := newWorld(t)
 	ctx := context.Background()
-	view, _ := w.store.ScheduleView(ctx, w.ministry.ID, w.month)
-	var voices []store.ScheduleSlot
-	for _, week := range view.Weeks {
-		for _, sv := range week.Services {
-			if sv.Date != "2026-11-19" {
-				continue
-			}
-			for _, role := range sv.Roles {
-				if role.Name == "Voz" {
-					voices = role.Slots
-				}
-			}
-		}
-	}
-	if _, err := w.bot.Decline(ctx, []int64{voices[0].AssignmentID}, false); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := w.bot.Decline(ctx, []int64{voices[1].AssignmentID}, false); err != nil {
-		t.Fatal(err)
-	}
-	var free string
-	for _, name := range []string{"Ana", "Bia", "Cris", "Duda"} {
-		if len(polls(w.fake.to(w.phone(name)))) == 2 {
-			free = name
-		}
-	}
-	if free == "" {
-		t.Fatalf("no singer was invited to both places: %+v", w.fake.sent)
-	}
-	invites := polls(w.fake.to(w.phone(free)))
-	w.fake.reset()
-	w.vote(invites[0], "✅ Consigo", false)
-	w.vote(invites[1], "✅ Consigo", false)
-
-	taken := 0
-	view, _ = w.store.ScheduleView(ctx, w.ministry.ID, w.month)
-	for _, week := range view.Weeks {
-		for _, sv := range week.Services {
-			for _, role := range sv.Roles {
-				for _, slot := range role.Slots {
-					if sv.Date == "2026-11-19" && slot.PersonName == free {
-						taken++
+	voices := func() []store.ScheduleSlot {
+		view, _ := w.store.ScheduleView(ctx, w.ministry.ID, w.month)
+		for _, week := range view.Weeks {
+			for _, sv := range week.Services {
+				for _, role := range sv.Roles {
+					if sv.Date == "2026-11-19" && role.Name == "Voz" {
+						return role.Slots
 					}
 				}
 			}
 		}
+		return nil
 	}
-	if taken != 1 || !containsText(w.fake.to(w.phone(free)), "Você já está nesse culto") {
-		t.Fatalf("%s holds %d places; messages %+v", free, taken, w.fake.to(w.phone(free)))
+	away := voices()
+	if _, err := w.bot.Decline(ctx, []int64{away[1].AssignmentID}, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.bot.Decline(ctx, []int64{away[0].AssignmentID}, false); err != nil {
+		t.Fatal(err)
+	}
+	if containsText(w.fake.to(w.phone("Líder")), "⚠️ Líder") {
+		t.Fatalf("the leader was told about their own absence: %+v", w.fake.to(w.phone("Líder")))
+	}
+
+	var free []string
+	for _, name := range []string{"Ana", "Bia", "Cris", "Duda"} {
+		switch n := len(polls(w.fake.to(w.phone(name)))); {
+		case n > 1:
+			t.Fatalf("%s got %d invitations for one service", name, n)
+		case n == 1:
+			free = append(free, name)
+		}
+	}
+	if len(free) != 2 {
+		t.Fatalf("free singers = %v", free)
+	}
+	first, second := lastPoll(t, w.fake.to(w.phone(free[0]))), lastPoll(t, w.fake.to(w.phone(free[1])))
+	w.vote(first, "✅ Consigo", false)
+	w.vote(second, "✅ Consigo", false)
+	w.fake.reset()
+	w.vote(first, "✅ Consigo", false)
+	if len(w.fake.sent) != 0 {
+		t.Fatalf("voting again sent %+v", w.fake.sent)
+	}
+
+	held := map[string]int{}
+	for _, slot := range voices() {
+		held[slot.PersonName]++
+	}
+	if held[free[0]] != 1 || held[free[1]] != 1 {
+		t.Fatalf("voz on thursday = %+v", held)
 	}
 }

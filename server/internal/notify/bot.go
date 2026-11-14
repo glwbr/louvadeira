@@ -163,14 +163,20 @@ func (b *Bot) allows(to string) bool {
 	return to != "" && messenger.Allows(b.Messenger, messenger.Address(to))
 }
 
-func (b *Bot) tellLeaders(ctx context.Context, ministryID int64, text string) {
+/**
+ * NOTE: Sends to the ministry's leaders, except the people the news is about: a leader who is away already knows,
+ * and a leader who covers already got their own reply.
+ */
+func (b *Bot) tellLeaders(ctx context.Context, ministryID int64, text string, about ...int64) {
 	leaders, err := b.Store.Leaders(ctx, ministryID)
 	if err != nil {
 		b.Log.Error("buscar líderes", "erro", err)
 		return
 	}
 	for _, leader := range leaders {
-		b.send(ctx, leader.Phone, text)
+		if !containsID(about, leader.ID) {
+			b.send(ctx, leader.Phone, text)
+		}
 	}
 }
 
@@ -513,7 +519,7 @@ func (b *Bot) confirm(ctx context.Context, person store.Person, assignments []in
 		for _, waiting := range result.Waiting {
 			b.send(ctx, waiting.Phone, comebackReleased(waiting.Name, person.Name, d))
 		}
-		b.tellLeaders(ctx, d.MinistryID, comebackAlert(person.Name, d))
+		b.tellLeaders(ctx, d.MinistryID, comebackAlert(person.Name, d), person.ID)
 	}
 	if confirmed && reply {
 		b.send(ctx, person.Phone, confirmedReply(person.Name))

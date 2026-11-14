@@ -129,9 +129,61 @@ func (b *Bot) openSwap(ctx context.Context, assignmentID int64) (*swap, error) {
 	return &swap{detail: d, request: request, late: late}, nil
 }
 
+/**
+ * NOTE: The swaps of one service and role, offered together: when two singers of the same Thursday are away, a
+ * free singer gets one "Thursday" option and takes whichever place is still open.
+ */
+type offer struct {
+	swaps []*swap
+}
+
+func (o offer) first() store.AssignmentDetail {
+	return o.swaps[0].detail
+}
+
+func (o offer) requests() []int64 {
+	ids := make([]int64, len(o.swaps))
+	for i, s := range o.swaps {
+		ids[i] = s.request
+	}
+	return ids
+}
+
+func (o offer) absentNames() []string {
+	var names []string
+	for _, s := range o.swaps {
+		if !contains(names, s.detail.PersonName) {
+			names = append(names, s.detail.PersonName)
+		}
+	}
+	return names
+}
+
+func sameSlot(a, b store.AssignmentDetail) bool {
+	return a.ServiceID == b.ServiceID && a.Date == b.Date && a.RoleID == b.RoleID
+}
+
+func groupOffers(swaps []*swap) []offer {
+	var offers []offer
+	for _, s := range swaps {
+		joined := false
+		for i := range offers {
+			if sameSlot(offers[i].first(), s.detail) {
+				offers[i].swaps = append(offers[i].swaps, s)
+				joined = true
+				break
+			}
+		}
+		if !joined {
+			offers = append(offers, offer{swaps: []*swap{s}})
+		}
+	}
+	return offers
+}
+
 func (b *Bot) inviteCovers(ctx context.Context, swaps []*swap, why absence) {
 	type invitee struct{ ministry, person int64 }
-	offers := map[invitee][]*swap{}
+	pending := map[invitee][]*swap{}
 	people := map[invitee]store.Person{}
 	var order []invitee
 	for _, s := range swaps {
@@ -146,48 +198,111 @@ func (b *Bot) inviteCovers(ctx context.Context, swaps []*swap, why absence) {
 				continue
 			}
 			k := invitee{s.detail.MinistryID, c.ID}
-			if _, ok := offers[k]; !ok {
+			if _, ok := pending[k]; !ok {
 				order = append(order, k)
 				people[k] = c
 			}
-			offers[k] = append(offers[k], s)
+			pending[k] = append(pending[k], s)
 		}
 	}
 	for _, k := range order {
-		list, candidate := offers[k], people[k]
-		for start := 0; start < len(list); start += maxPollSlots {
-			chunk := list[start:min(start+maxPollSlots, len(list))]
+		candidate := people[k]
+		var fresh []*swap
+		for _, s := range pending[k] {
+			if !b.joinInvitation(ctx, candidate, s) {
+				fresh = append(fresh, s)
+			}
+		}
+		offers := groupOffers(fresh)
+		for start := 0; start < len(offers); start += maxPollSlots {
+			chunk := offers[start:min(start+maxPollSlots, len(offers))]
 			if !b.sendInvite(ctx, candidate, chunk, why) {
 				continue
 			}
-			for _, s := range chunk {
-				if err := b.Store.AddCoverInvite(ctx, s.request, candidate.ID); err != nil {
-					b.Log.Error("registrar convite", "erro", err)
-					continue
+			for _, o := range chunk {
+				for _, s := range o.swaps {
+					if err := b.Store.AddCoverInvite(ctx, s.request, candidate.ID); err != nil {
+						b.Log.Error("registrar convite", "erro", err)
+						continue
+					}
+					s.invited = append(s.invited, candidate.Name)
 				}
-				s.invited = append(s.invited, candidate.Name)
 			}
 		}
 	}
 }
 
-func (b *Bot) sendInvite(ctx context.Context, candidate store.Person, offers []*swap, why absence) bool {
-	first := offers[0].detail
-	if len(offers) == 1 && why.period == "" {
-		options := []store.PollOption{
-			{Label: optionCanCover, Action: actionAccept, Request: offers[0].request},
-			{Label: optionCannotCover, Action: actionRefuse, Request: offers[0].request},
+/**
+ * NOTE: When the candidate already has an invitation for the same service and role, the new place joins that
+ * invitation instead of becoming another message. Someone who already said no to that service is not asked again.
+ */
+func (b *Bot) joinInvitation(ctx context.Context, candidate store.Person, s *swap) bool {
+	polls, err := b.Store.PersonCoverPolls(ctx, candidate.ID)
+	if err != nil {
+		return false
+	}
+	for _, poll := range polls {
+		for i, option := range poll.Options {
+			if option.Action != actionAccept {
+				continue
+			}
+			ids := requestsOf(option)
+			earlier, err := b.Store.CoverRequestResult(ctx, ids[0])
+			if err != nil || !sameSlot(earlier.Assignment, s.detail) {
+				continue
+			}
+			if err := b.Store.AddCoverInvite(ctx, s.request, candidate.ID); err != nil {
+				return false
+			}
+			if b.Store.InviteAnswer(ctx, ids[0], candidate.ID) == "no" {
+				_, _ = b.Store.RefuseCover(ctx, s.request, candidate.ID, b.now())
+				return true
+			}
+			poll.Options[i].Requests = append(ids, s.request)
+			poll.Options[i].Request = 0
+			for j := range poll.Options {
+				if poll.Options[j].Action == actionRefuse {
+					poll.Options[j].Requests = append(requestsOf(poll.Options[j]), s.request)
+					poll.Options[j].Request = 0
+				}
+			}
+			if err := b.Store.UpdatePollOptions(ctx, poll.MessageID, poll.Options); err != nil {
+				b.Log.Error("juntar convite", "erro", err)
+				return false
+			}
+			s.invited = append(s.invited, candidate.Name)
+			return true
 		}
-		return b.sendPoll(ctx, store.PollCover, candidate, coverQuestion(candidate.Name, first), options, false)
+	}
+	return false
+}
+
+func (b *Bot) sendInvite(ctx context.Context, candidate store.Person, offers []offer, why absence) bool {
+	first := offers[0].first()
+	absent := offers[0].absentNames()
+	for _, o := range offers[1:] {
+		for _, name := range o.absentNames() {
+			if !contains(absent, name) {
+				absent = append(absent, name)
+			}
+		}
+	}
+	if len(offers) == 1 && why.period == "" {
+		ids := offers[0].requests()
+		options := []store.PollOption{
+			{Label: optionCanCover, Action: actionAccept, Requests: ids},
+			{Label: optionCannotCover, Action: actionRefuse, Requests: ids},
+		}
+		return b.sendPoll(ctx, store.PollCover, candidate, coverQuestion(candidate.Name, joinNames(absent), first), options, false)
 	}
 
-	question := coverManyQuestion(candidate.Name, first, why.period)
+	question := coverManyQuestion(candidate.Name, joinNames(absent), first, why.period)
 	labels := offerLabels(offers)
 	options := make([]store.PollOption, 0, len(offers)+1)
-	all := make([]int64, len(offers))
-	for i, s := range offers {
-		options = append(options, store.PollOption{Label: coverOption(labels[i]), Action: actionAccept, Request: s.request})
-		all[i] = s.request
+	var all []int64
+	for i, o := range offers {
+		options = append(options, store.PollOption{Label: coverOption(labels[i]), Action: actionAccept, Requests: o.requests()})
+		all = append(all, o.requests()...)
 	}
 	none := optionCoverNone
 	if len(offers) == 1 {
@@ -199,23 +314,24 @@ func (b *Bot) sendInvite(ctx context.Context, candidate store.Person, offers []*
 
 /**
  * NOTE: Option labels name the day ("quinta 19/11"), adding the time only when a day repeats and the role only when
- * the slots differ in role, so the poll stays short.
+ * the places differ in role, so the poll stays short.
  */
-func offerLabels(offers []*swap) []string {
+func offerLabels(offers []offer) []string {
 	days := map[string]int{}
 	roles := map[string]bool{}
-	for _, s := range offers {
-		days[s.detail.Date]++
-		roles[s.detail.RoleName] = true
+	for _, o := range offers {
+		days[o.first().Date]++
+		roles[o.first().RoleName] = true
 	}
 	labels := make([]string, len(offers))
-	for i, s := range offers {
-		label := weekday(s.detail.Date) + ", " + dayMonth(s.detail.Date)
-		if days[s.detail.Date] > 1 {
-			label += ", às " + hour(s.detail.StartTime)
+	for i, o := range offers {
+		d := o.first()
+		label := weekday(d.Date) + ", " + dayMonth(d.Date)
+		if days[d.Date] > 1 {
+			label += ", às " + hour(d.StartTime)
 		}
 		if len(roles) > 1 {
-			label += " (" + s.detail.RoleName + ")"
+			label += " (" + d.RoleName + ")"
 		}
 		labels[i] = label
 	}
@@ -249,7 +365,7 @@ func (b *Bot) alertDeclined(ctx context.Context, swaps []*swap, why absence) {
 		if len(blocked) > 0 {
 			alert += blockedNote(blocked)
 		}
-		b.tellLeaders(ctx, ministry, alert)
+		b.tellLeaders(ctx, ministry, alert, first.PersonID)
 	}
 }
 
@@ -281,13 +397,14 @@ func (b *Bot) answerCover(ctx context.Context, person store.Person, options, cho
 			slots++
 		}
 	}
-	var accepts, refusals []int64
+	var accepts [][]int64
+	var refusals []int64
 	for _, o := range options {
 		switch {
 		case o.Action == actionAccept && picked[o.Label]:
-			accepts = append(accepts, o.Request)
+			accepts = append(accepts, requestsOf(o))
 		case o.Action == actionAccept && slots > 1:
-			refusals = append(refusals, o.Request)
+			refusals = append(refusals, requestsOf(o)...)
 		case o.Action == actionRefuse && picked[o.Label]:
 			refusals = append(refusals, requestsOf(o)...)
 		}
@@ -303,34 +420,54 @@ func requestsOf(o store.PollOption) []int64 {
 	return []int64{o.Request}
 }
 
-func (b *Bot) acceptCovers(ctx context.Context, substitute store.Person, requestIDs []int64) {
-	if len(requestIDs) == 0 {
+/**
+ * NOTE: Each group holds the places of one option; the person takes the first one still open and only one, since
+ * nobody serves twice in the same service.
+ */
+func (b *Bot) acceptCovers(ctx context.Context, substitute store.Person, groups [][]int64) {
+	if len(groups) == 0 {
 		return
 	}
 	var won, gone []store.CoverResult
 	var busy []string
-	for _, id := range requestIDs {
-		result, err := b.Store.AcceptCover(ctx, id, substitute.ID, b.now())
-		switch {
-		case errors.Is(err, store.ErrAlreadyServing):
-			if r, err := b.Store.CoverRequestResult(ctx, id); err == nil {
-				busy = append(busy, slotText(r.Assignment))
+	for _, group := range groups {
+		var last store.CoverResult
+		settled := false
+		for _, id := range group {
+			result, err := b.Store.AcceptCover(ctx, id, substitute.ID, b.now())
+			if err == nil {
+				won = append(won, result)
+				settled = true
+				break
 			}
-			b.refuseCovers(ctx, substitute, []int64{id}, false)
-		case errors.Is(err, store.ErrCoverClosed):
-			// NOTE: A multiple-choice vote arrives again with the slots this person already took; those stay quiet.
-			if r, err := b.Store.CoverRequestResult(ctx, id); err == nil && r.Assignment.PersonID != substitute.ID {
-				gone = append(gone, r)
+			r, rerr := b.Store.CoverRequestResult(ctx, id)
+			if rerr == nil && r.Assignment.PersonID == substitute.ID {
+				// NOTE: A multiple-choice vote arrives again with the places this person already took; those stay quiet.
+				settled = true
+				break
 			}
-		case err != nil:
-			b.Log.Error("aceitar troca", "erro", err)
-		default:
-			won = append(won, result)
+			if errors.Is(err, store.ErrAlreadyServing) {
+				if rerr == nil {
+					busy = append(busy, slotText(r.Assignment))
+				}
+				b.refuseCovers(ctx, substitute, group, false)
+				settled = true
+				break
+			}
+			if !errors.Is(err, store.ErrCoverClosed) {
+				b.Log.Error("aceitar troca", "erro", err)
+				settled = true
+				break
+			}
+			last = r
+		}
+		if !settled && last.Request.ID != 0 {
+			gone = append(gone, last)
 		}
 	}
 
 	if len(gone) > 0 {
-		b.send(ctx, substitute.Phone, goneReply(len(requestIDs) == 1, slotTexts(gone)))
+		b.send(ctx, substitute.Phone, goneReply(len(groups) == 1, slotTexts(gone)))
 	}
 	if len(busy) > 0 {
 		b.send(ctx, substitute.Phone, alreadyServingReply(busy))
@@ -349,7 +486,7 @@ func (b *Bot) acceptCovers(ctx context.Context, substitute store.Person, request
 		list := byHandover[k]
 		absent, d := list[0].Absent, list[0].Assignment
 		b.send(ctx, absent.Phone, replacedNotice(absent.Name, substitute.Name, slotTexts(list)))
-		b.tellLeaders(ctx, d.MinistryID, swapAnnouncement(d.MinistryName, substitute.Name, absent.Name, slotTexts(list)))
+		b.tellLeaders(ctx, d.MinistryID, swapAnnouncement(d.MinistryName, substitute.Name, absent.Name, slotTexts(list)), absent.ID, substitute.ID)
 		if d.WhatsAppGroup != "" {
 			text := swapAnnouncement(d.MinistryName, mentionOf(substitute), mentionOf(absent), slotTexts(list))
 			b.mention(ctx, d.WhatsAppGroup, text, substitute, absent)
@@ -400,7 +537,7 @@ func (b *Bot) refuseCovers(ctx context.Context, person store.Person, requestIDs 
 	gaps, byGap := groupBy(uncovered, func(r store.CoverResult) gap { return gap{r.Assignment.MinistryID, r.Absent.ID} })
 	for _, k := range gaps {
 		list := byGap[k]
-		b.tellLeaders(ctx, k.ministry, uncoveredAlert(list[0].Assignment, list[0].Absent.Name, slotTexts(list)))
+		b.tellLeaders(ctx, k.ministry, uncoveredAlert(list[0].Assignment, list[0].Absent.Name, slotTexts(list)), k.absent)
 	}
 }
 

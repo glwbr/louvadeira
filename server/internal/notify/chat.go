@@ -340,7 +340,7 @@ func (b *Bot) registerAbsence(ctx context.Context, person store.Person, ranges [
 			b.Log.Error("buscar ministérios da pessoa", "erro", err)
 		}
 		for _, id := range ministries {
-			b.tellLeaders(ctx, id, absenceNotedAlert(person.Name, label))
+			b.tellLeaders(ctx, id, absenceNotedAlert(person.Name, label), person.ID)
 		}
 		return
 	}

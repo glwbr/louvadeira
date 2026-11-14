@@ -72,18 +72,26 @@ func declinedReply(name string, invited []string) string {
 	return text + "."
 }
 
-func coverQuestion(candidate string, d store.AssignmentDetail) string {
-	return fmt.Sprintf("Oi, %s! %s não vai conseguir ir %s, %s, às %s (%s). Você consegue substituir?",
-		firstName(candidate), d.PersonName, onWeekday(d.Date), dayMonth(d.Date), hour(d.StartTime), d.RoleName)
+func coverQuestion(candidate, absent string, d store.AssignmentDetail) string {
+	return fmt.Sprintf("Oi, %s! %s não %s conseguir ir %s, %s, às %s (%s). Você consegue substituir?",
+		firstName(candidate), absent, goVerb(absent), onWeekday(d.Date), dayMonth(d.Date), hour(d.StartTime), d.RoleName)
 }
 
-func coverManyQuestion(candidate string, d store.AssignmentDetail, period string) string {
+func coverManyQuestion(candidate, absent string, d store.AssignmentDetail, period string) string {
 	if period == "" {
-		return fmt.Sprintf("Oi, %s! %s não vai conseguir ir nestes cultos do %s. Em quais você consegue substituir? Pode marcar mais de um 🙂",
-			firstName(candidate), d.PersonName, d.MinistryName)
+		return fmt.Sprintf("Oi, %s! %s não %s conseguir ir nestes cultos do %s. Em quais você consegue substituir? Pode marcar mais de um 🙂",
+			firstName(candidate), absent, goVerb(absent), d.MinistryName)
 	}
-	return fmt.Sprintf("Oi, %s! %s não vai poder servir no %s %s. Em quais destes cultos você consegue substituir? Pode marcar mais de um 🙂",
-		firstName(candidate), d.PersonName, d.MinistryName, period)
+	return fmt.Sprintf("Oi, %s! %s não %s poder servir no %s %s. Em quais destes cultos você consegue substituir? Pode marcar mais de um 🙂",
+		firstName(candidate), absent, goVerb(absent), d.MinistryName, period)
+}
+
+// NOTE: "Ana não vai", "Ana e Bia não vão".
+func goVerb(names string) string {
+	if strings.Contains(names, " e ") {
+		return "vão"
+	}
+	return "vai"
 }
 
 func coverOption(label string) string {
