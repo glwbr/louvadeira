@@ -24,7 +24,10 @@ const (
 	CoverUncovered = "uncovered"
 )
 
-var ErrCoverClosed = errors.New("a troca já foi resolvida")
+var (
+	ErrCoverClosed    = errors.New("a troca já foi resolvida")
+	ErrAlreadyServing = errors.New("a pessoa já está nesse culto")
+)
 
 /**
  * NOTE: Everything the messages need about one person in one role at one service of a published schedule.
@@ -341,10 +344,24 @@ type CoverResult struct {
 
 /**
  * INVARIANT: The first acceptance wins. Accepting moves the slot to the new person (already confirmed) in the same
- * transaction that closes the request, so two people can never both get it.
+ * transaction that closes the request, so two people can never both get it, and nobody takes two slots of one
+ * service when two people of the same service are away.
  */
 func (s *Store) AcceptCover(ctx context.Context, requestID, personID int64, now time.Time) (CoverResult, error) {
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		var busy bool
+		if err := tx.QueryRowContext(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM cover_requests cr
+				JOIN assignments target ON target.id = cr.assignment_id
+				JOIN assignments other ON other.service_id = target.service_id AND other.service_date = target.service_date
+				  AND other.id != target.id
+				WHERE cr.id = ? AND other.person_id = ?)`, requestID, personID).Scan(&busy); err != nil {
+			return err
+		}
+		if busy {
+			return ErrAlreadyServing
+		}
 		var assignmentID int64
 		err := tx.QueryRowContext(ctx, `
 			UPDATE cover_requests SET status = 'covered', covered_by = ?, resolved_at = ?

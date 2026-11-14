@@ -155,6 +155,10 @@ func goneReply(all bool, slots []string) string {
 	return fmt.Sprintf("Obrigado! 🙏 %s já foram resolvidos.", capitalize(joinNames(slots)))
 }
 
+func alreadyServingReply(slots []string) string {
+	return fmt.Sprintf("Você já está nesse culto (%s), então esse lugar fica para outra pessoa 🙂", joinNames(slots))
+}
+
 func refusedReply() string {
 	return "Tudo bem, obrigado por responder! 🙏"
 }

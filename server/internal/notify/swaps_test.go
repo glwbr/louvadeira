@@ -178,3 +178,58 @@ func TestRepeatingAbsenceOnlyCountsMatchingDays(t *testing.T) {
 		t.Fatalf("leader = %+v", leader)
 	}
 }
+
+func TestNobodyTakesTwoPlacesInTheSameService(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	view, _ := w.store.ScheduleView(ctx, w.ministry.ID, w.month)
+	var voices []store.ScheduleSlot
+	for _, week := range view.Weeks {
+		for _, sv := range week.Services {
+			if sv.Date != "2026-11-19" {
+				continue
+			}
+			for _, role := range sv.Roles {
+				if role.Name == "Voz" {
+					voices = role.Slots
+				}
+			}
+		}
+	}
+	if _, err := w.bot.Decline(ctx, []int64{voices[0].AssignmentID}, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.bot.Decline(ctx, []int64{voices[1].AssignmentID}, false); err != nil {
+		t.Fatal(err)
+	}
+	var free string
+	for _, name := range []string{"Ana", "Bia", "Cris", "Duda"} {
+		if len(polls(w.fake.to(w.phone(name)))) == 2 {
+			free = name
+		}
+	}
+	if free == "" {
+		t.Fatalf("no singer was invited to both places: %+v", w.fake.sent)
+	}
+	invites := polls(w.fake.to(w.phone(free)))
+	w.fake.reset()
+	w.vote(invites[0], "✅ Consigo", false)
+	w.vote(invites[1], "✅ Consigo", false)
+
+	taken := 0
+	view, _ = w.store.ScheduleView(ctx, w.ministry.ID, w.month)
+	for _, week := range view.Weeks {
+		for _, sv := range week.Services {
+			for _, role := range sv.Roles {
+				for _, slot := range role.Slots {
+					if sv.Date == "2026-11-19" && slot.PersonName == free {
+						taken++
+					}
+				}
+			}
+		}
+	}
+	if taken != 1 || !containsText(w.fake.to(w.phone(free)), "Você já está nesse culto") {
+		t.Fatalf("%s holds %d places; messages %+v", free, taken, w.fake.to(w.phone(free)))
+	}
+}

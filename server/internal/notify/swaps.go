@@ -308,9 +308,15 @@ func (b *Bot) acceptCovers(ctx context.Context, substitute store.Person, request
 		return
 	}
 	var won, gone []store.CoverResult
+	var busy []string
 	for _, id := range requestIDs {
 		result, err := b.Store.AcceptCover(ctx, id, substitute.ID, b.now())
 		switch {
+		case errors.Is(err, store.ErrAlreadyServing):
+			if r, err := b.Store.CoverRequestResult(ctx, id); err == nil {
+				busy = append(busy, slotText(r.Assignment))
+			}
+			b.refuseCovers(ctx, substitute, []int64{id}, false)
 		case errors.Is(err, store.ErrCoverClosed):
 			// NOTE: A multiple-choice vote arrives again with the slots this person already took; those stay quiet.
 			if r, err := b.Store.CoverRequestResult(ctx, id); err == nil && r.Assignment.PersonID != substitute.ID {
@@ -325,6 +331,9 @@ func (b *Bot) acceptCovers(ctx context.Context, substitute store.Person, request
 
 	if len(gone) > 0 {
 		b.send(ctx, substitute.Phone, goneReply(len(requestIDs) == 1, slotTexts(gone)))
+	}
+	if len(busy) > 0 {
+		b.send(ctx, substitute.Phone, alreadyServingReply(busy))
 	}
 	if len(won) == 0 {
 		return
