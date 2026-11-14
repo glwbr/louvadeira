@@ -1,17 +1,23 @@
+import { revalidateLogic } from "@tanstack/react-form"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useState, type FormEvent } from "react"
+import { Loader2, Send } from "lucide-react"
+import { useState } from "react"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
+import { DateBlock } from "@/components/date-block"
+import { useAppForm } from "@/components/form"
+import { ErrorState } from "@/components/error-state"
+import { RevealItem } from "@/components/motion"
+import { RoleIcon } from "@/components/role-icon"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api, queryKeys, type Unavailability } from "@/lib/api"
 import { toastError } from "@/lib/errors"
-import { absenceLabel, firstName, formatDay, reasonLabel, weekdayOf } from "@/lib/format"
+import { absenceLabel, firstName } from "@/lib/format"
 
-import { AbsenceFields, absenceInput, absenceReady, emptyAbsence } from "./absence-fields"
+import { AbsenceFields, absenceDefaults, absenceInput, validateAbsence } from "./absence-form"
 
 type Props = {
   open: boolean
@@ -31,15 +37,7 @@ export function UnavailabilityDialog({ open, onOpenChange, defaultDate, absence 
   )
 }
 
-function UnavailabilitySteps({
-  defaultDate,
-  absence,
-  onDone,
-}: {
-  defaultDate: string
-  absence?: Unavailability
-  onDone: () => void
-}) {
+function UnavailabilitySteps({ defaultDate, absence, onDone }: { defaultDate: string; absence?: Unavailability; onDone: () => void }) {
   const [saved, setSaved] = useState(absence)
   if (saved) {
     return <OpenCovers absence={saved} onDone={onDone} />
@@ -48,58 +46,55 @@ function UnavailabilitySteps({
 }
 
 function UnavailabilityForm({ defaultDate, onSaved }: { defaultDate: string; onSaved: (u: Unavailability) => void }) {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const people = useQuery({ queryKey: queryKeys.people, queryFn: api.people.list })
-  const [personId, setPersonId] = useState("")
-  const [draft, setDraft] = useState(() => emptyAbsence(defaultDate))
 
   const save = useMutation({
-    mutationFn: () => api.unavailabilities.create({ personId: Number(personId), ...absenceInput(draft) }),
+    mutationFn: (input: Parameters<typeof api.unavailabilities.create>[0]) => api.unavailabilities.create(input),
     onSuccess: (saved) => {
       queryClient.invalidateQueries({ queryKey: ["unavailabilities"] })
       queryClient.invalidateQueries({ queryKey: ["schedules"] })
-      toast.success("Indisponibilidade registrada")
+      toast.success(t("absence.saved", { name: firstName(saved.personName), label: absenceLabel(saved).toLowerCase() }))
       onSaved(saved)
     },
     onError: toastError,
   })
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    save.mutate()
-  }
+  const form = useAppForm({
+    defaultValues: absenceDefaults(defaultDate),
+    validationLogic: revalidateLogic(),
+    validators: { onDynamic: ({ value }) => validateAbsence(value, true) },
+    onSubmit: async ({ value }) => {
+      await save.mutateAsync({ personId: Number(value.personId), ...absenceInput(value) }).catch(() => undefined)
+    },
+  })
+
+  const personOptions = (people.data ?? []).map((person) => ({ value: String(person.id), label: person.name }))
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-4">
-      <DialogHeader>
-        <DialogTitle>Quem não pode</DialogTitle>
-        <DialogDescription>
-          O gerador não coloca a pessoa na escala nesses dias. Se ela já estiver numa escala publicada, dá para pedir
-          substituto em seguida.
-        </DialogDescription>
-      </DialogHeader>
-      <div className="grid gap-2">
-        <Label>Pessoa</Label>
-        <Select value={personId} onValueChange={setPersonId}>
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Escolha uma pessoa" />
-          </SelectTrigger>
-          <SelectContent>
-            {people.data?.map((person) => (
-              <SelectItem key={person.id} value={String(person.id)}>
-                {person.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <AbsenceFields value={draft} onChange={setDraft} />
-      <DialogFooter>
-        <Button type="submit" disabled={save.isPending || !personId || !absenceReady(draft)}>
-          {save.isPending ? "Salvando…" : "Salvar"}
-        </Button>
-      </DialogFooter>
-    </form>
+    <form.AppForm>
+      <form.Form>
+        <DialogHeader>
+          <DialogTitle>{t("absence.newTitle")}</DialogTitle>
+          <DialogDescription>{t("absence.newLead")}</DialogDescription>
+        </DialogHeader>
+        <form.AppField name="personId">
+          {(field) => (
+            <field.SelectField
+              label={t("absence.person")}
+              placeholder={people.isPending ? t("common.loading") : t("absence.personPlaceholder")}
+              disabled={!people.data}
+              options={personOptions}
+            />
+          )}
+        </form.AppField>
+        <AbsenceFields form={form} />
+        <DialogFooter>
+          <form.SubmitButton pendingLabel={t("absence.saving")}>{t("common.save")}</form.SubmitButton>
+        </DialogFooter>
+      </form.Form>
+    </form.AppForm>
   )
 }
 
@@ -108,6 +103,7 @@ function UnavailabilityForm({ defaultDate, onSaved }: { defaultDate: string; onS
  * their own absence on their page; otherwise a leader acting for someone.
  */
 export function OpenCovers({ absence, onDone, mine = false }: { absence: Unavailability; onDone: () => void; mine?: boolean }) {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const slots = useQuery({
     queryKey: mine ? queryKeys.myAbsenceSlots(absence.id) : queryKeys.unavailabilityAssignments(absence.id),
@@ -119,59 +115,61 @@ export function OpenCovers({ absence, onDone, mine = false }: { absence: Unavail
       queryClient.invalidateQueries({ queryKey: ["unavailabilities"] })
       queryClient.invalidateQueries({ queryKey: ["schedules"] })
       queryClient.invalidateQueries({ queryKey: ["mine"] })
-      toast.success(
-        requests.length === 1 ? "Pronto! Já estamos procurando substituto." : `Pronto! Já estamos procurando substituto para os ${requests.length} cultos.`
-      )
+      toast.success(t("absence.coversSent", { count: requests.length }))
       onDone()
     },
     onError: toastError,
   })
 
   const count = slots.data?.length ?? absence.scheduled
-  const services = count === 1 ? "1 culto" : `${count} cultos`
+  const label = absenceLabel(absence).toLowerCase()
   const ministries = new Set(slots.data?.map((slot) => slot.ministryId))
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <DialogHeader>
-        <DialogTitle>Procurar substituto</DialogTitle>
+        <DialogTitle>{t("absence.coversTitle")}</DialogTitle>
         <DialogDescription>
-          {mine ? `Você tem ${services}` : `${firstName(absence.personName)} tem ${services}`} na escala nesse período (
-          {absenceLabel(absence).toLowerCase()}). Quem pode substituir recebe uma mensagem no WhatsApp, e quem responder
-          primeiro fica com o culto.
+          {mine
+            ? t("absence.coversLeadMine", { count, label })
+            : t("absence.coversLead", { count, label, name: firstName(absence.personName) })}{" "}
+          {t("absence.coversHow")}
         </DialogDescription>
       </DialogHeader>
       {slots.isPending ? (
-        <div className="flex flex-col gap-2">
-          <Skeleton className="h-5 w-3/4" />
-          <Skeleton className="h-5 w-2/3" />
+        <div className="flex flex-col gap-2" role="status" aria-label={t("common.loading")}>
+          <Skeleton className="h-14 w-full rounded-xl" />
+          <Skeleton className="h-14 w-full rounded-xl" />
         </div>
+      ) : slots.isError ? (
+        <ErrorState error={slots.error} onRetry={() => void slots.refetch()} retrying={slots.isFetching} />
       ) : count === 0 ? (
-        <p className="text-sm text-muted-foreground">Nenhum culto pendente: já estamos procurando substituto.</p>
+        <p className="text-sm text-muted-foreground">{t("absence.coversNone")}</p>
       ) : (
-        <ul className="flex flex-col gap-1.5 text-sm">
-          {slots.data?.map((slot) => (
-            <li key={slot.assignmentId} className="flex items-baseline justify-between gap-3">
-              <span>
-                {weekdayOf(slot.date)}, {formatDay(slot.date)} · {slot.startTime.replace(":", "h")}
-              </span>
-              <span className="text-muted-foreground">
-                {slot.roleName}
-                {ministries.size > 1 && ` · ${slot.ministryName}`}
-              </span>
-            </li>
-          ))}
+        <ul className="flex flex-col gap-2">
+          {slots.data.map((slot, index) => {
+            return (
+              <RevealItem key={slot.assignmentId} index={index} className="flex items-center gap-3 rounded-xl border p-2 pr-3">
+                <DateBlock date={slot.date} startTime={slot.startTime} className="w-12 py-1 [&>span:nth-child(2)]:text-xl" />
+                <span className="flex min-w-0 flex-1 items-center gap-2 text-sm">
+                  <RoleIcon name={slot.roleName} className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                  <span className="truncate">
+                    {slot.roleName}
+                    {ministries.size > 1 && <span className="text-muted-foreground"> · {slot.ministryName}</span>}
+                  </span>
+                </span>
+              </RevealItem>
+            )
+          })}
         </ul>
       )}
-      <p className="text-xs text-muted-foreground">
-        O motivo ({reasonLabel(absence.reason).toLowerCase()}) fica só com a liderança.
-      </p>
       <DialogFooter>
-        <Button variant="outline" onClick={onDone}>
-          Agora não
+        <Button variant="ghost" onClick={onDone}>
+          {t("common.notNow")}
         </Button>
         <Button onClick={() => open.mutate()} disabled={open.isPending || slots.isPending || count === 0}>
-          {open.isPending ? "Enviando…" : "Procurar substituto"}
+          {open.isPending ? <Loader2 className="animate-spin" /> : <Send />}
+          {open.isPending ? t("absence.sending") : t("absence.coversTitle")}
         </Button>
       </DialogFooter>
     </div>

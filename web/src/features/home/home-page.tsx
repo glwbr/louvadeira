@@ -9,12 +9,12 @@ import { EmptyState } from "@/components/empty-state"
 import { ErrorState } from "@/components/error-state"
 import { CardSkeleton } from "@/components/list-skeleton"
 import { Reveal, RevealItem } from "@/components/motion"
+import { RoleIcon } from "@/components/role-icon"
 import { SlotStatusIcon } from "@/components/slot-status"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ApiError, api, queryKeys, type Health, type Ministry, type ScheduleService } from "@/lib/api"
 import { firstName, longDate, shiftMonth, thisMonth, todayISO } from "@/lib/format"
-import { roleIcon } from "@/lib/roles"
 import { cn } from "@/lib/utils"
 
 const UPCOMING_LIMIT = 3
@@ -190,10 +190,9 @@ function ServiceCard({ item, showMinistry }: { item: Upcoming; showMinistry: boo
         {service.communion && <CommunionTag className="mt-1" />}
         <ul className="mt-2.5 grid gap-1.5 text-sm">
           {service.roles.map((role) => {
-            const Icon = roleIcon(role.name)
             return (
               <li key={role.roleId} className="flex min-w-0 items-start gap-2">
-                <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-label={role.name} />
+                <RoleIcon name={role.name} className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-label={role.name} />
                 <span className="flex min-w-0 flex-wrap gap-x-3 gap-y-1">
                   {role.slots.map((slot) => (
                     <span key={slot.assignmentId} className="inline-flex min-w-0 items-center gap-1.5">

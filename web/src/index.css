@@ -184,3 +184,18 @@
     opacity: 0.5;
   }
 }
+
+@keyframes slot-flash {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  30%,
+  70% {
+    box-shadow: 0 0 0 4px color-mix(in oklch, var(--warning) 55%, transparent);
+  }
+}
+
+.slot-flash {
+  animation: slot-flash 1.4s var(--ease-out-expo);
+}

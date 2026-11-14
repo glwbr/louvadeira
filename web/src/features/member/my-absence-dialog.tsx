@@ -1,12 +1,15 @@
+import { revalidateLogic } from "@tanstack/react-form"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { useState, type FormEvent } from "react"
+import { useState } from "react"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
-import { Button } from "@/components/ui/button"
+import { useAppForm } from "@/components/form"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { api, type Unavailability } from "@/lib/api"
 import { toastError } from "@/lib/errors"
-import { AbsenceFields, absenceInput, absenceReady, emptyAbsence } from "@/features/schedules/absence-fields"
+import { todayISO } from "@/lib/format"
+import { AbsenceFields, absenceDefaults, absenceInput, validateAbsence } from "@/features/schedules/absence-form"
 import { OpenCovers } from "@/features/schedules/unavailability-dialog"
 
 type Props = {
@@ -31,42 +34,39 @@ function Steps({ absence, onDone }: { absence?: Unavailability; onDone: () => vo
   return <MyAbsenceForm onSaved={(u) => (u.scheduled > 0 ? setSaved(u) : onDone())} />
 }
 
-function today(): string {
-  const now = new Date()
-  const pad = (n: number) => String(n).padStart(2, "0")
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
-}
-
 function MyAbsenceForm({ onSaved }: { onSaved: (u: Unavailability) => void }) {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [draft, setDraft] = useState(() => emptyAbsence(today()))
   const save = useMutation({
-    mutationFn: () => api.mine.createAbsence(absenceInput(draft)),
+    mutationFn: (input: ReturnType<typeof absenceInput>) => api.mine.createAbsence(input),
     onSuccess: (saved) => {
       queryClient.invalidateQueries({ queryKey: ["mine"] })
-      toast.success("Anotado! 🙏")
+      toast.success(t("absence.savedMine"))
       onSaved(saved)
     },
     onError: toastError,
   })
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    save.mutate()
-  }
+  const form = useAppForm({
+    defaultValues: absenceDefaults(todayISO()),
+    validationLogic: revalidateLogic(),
+    validators: { onDynamic: ({ value }) => validateAbsence(value, false) },
+    onSubmit: async ({ value }) => {
+      await save.mutateAsync(absenceInput(value)).catch(() => undefined)
+    },
+  })
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-4">
-      <DialogHeader>
-        <DialogTitle>Quando você não pode?</DialogTitle>
-        <DialogDescription>Assim a gente não coloca você na escala nesses dias.</DialogDescription>
-      </DialogHeader>
-      <AbsenceFields value={draft} onChange={setDraft} />
-      <DialogFooter>
-        <Button type="submit" disabled={save.isPending || !absenceReady(draft)}>
-          {save.isPending ? "Salvando…" : "Salvar"}
-        </Button>
-      </DialogFooter>
-    </form>
+    <form.AppForm>
+      <form.Form>
+        <DialogHeader>
+          <DialogTitle>{t("absence.mineTitle")}</DialogTitle>
+          <DialogDescription>{t("absence.mineLead")}</DialogDescription>
+        </DialogHeader>
+        <AbsenceFields form={form} />
+        <DialogFooter>
+          <form.SubmitButton pendingLabel={t("absence.saving")}>{t("common.save")}</form.SubmitButton>
+        </DialogFooter>
+      </form.Form>
+    </form.AppForm>
   )
 }
