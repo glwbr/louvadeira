@@ -277,6 +277,8 @@ export const api = {
       request<Service>("POST", "/services", input),
     update: (id: number, input: ServiceInput) =>
       request<Service>("PUT", `/services/${id}`, input),
+    setCommunion: (serviceId: number | null, week: number | null) =>
+      request<void>("PUT", "/communion", { serviceId, week }),
   },
 
   ministries: {

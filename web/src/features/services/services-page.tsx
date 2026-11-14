@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { CalendarClock, ChevronRight, Plus } from "lucide-react"
+import { CalendarClock, ChevronRight, Grape, Plus } from "lucide-react"
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
 
@@ -12,9 +12,10 @@ import { PageHeader } from "@/components/page-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { api, queryKeys, type Service } from "@/lib/api"
-import { communionLabel, formatTime, serviceLabel, weekdayShortName } from "@/lib/format"
+import { communionLabel, formatTime, ordinalOfMonth, serviceLabel, weekdayShortName } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
+import { CommunionDialog } from "./communion-dialog"
 import { ServiceDialog } from "./service-dialog"
 
 export function ServicesPage() {
@@ -22,11 +23,13 @@ export function ServicesPage() {
   const services = useQuery({ queryKey: queryKeys.services, queryFn: api.services.list })
   const [editing, setEditing] = useState<Service | undefined>()
   const [open, setOpen] = useState(false)
+  const [choosingCommunion, setChoosingCommunion] = useState(false)
 
   const openDialog = (service?: Service) => {
     setEditing(service)
     setOpen(true)
   }
+  const communion = services.data?.find((service) => service.communionWeek)
   const sorted = [...(services.data ?? [])].sort(
     (a, b) => Number(b.active) - Number(a.active) || a.weekday - b.weekday || a.startTime.localeCompare(b.startTime)
   )
@@ -43,6 +46,30 @@ export function ServicesPage() {
           </Button>
         }
       />
+
+      {services.data && services.data.length > 0 && (
+        <section aria-labelledby="communion" className="mb-6 flex items-center gap-3.5 rounded-2xl border bg-card p-4">
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-brand">
+            <Grape className="size-5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 id="communion" className="font-medium">
+              {t("services.communion.title")}
+            </h2>
+            <p className="text-sm text-pretty text-muted-foreground">
+              {communion?.communionWeek
+                ? t("services.communion.current", {
+                    when: ordinalOfMonth(communion.communionWeek, communion.weekday),
+                    service: communion.name,
+                  })
+                : t("services.communion.none")}
+            </p>
+          </div>
+          <Button size="sm" variant="outline" className="shrink-0" onClick={() => setChoosingCommunion(true)}>
+            {communion ? t("services.communion.change") : t("services.communion.choose")}
+          </Button>
+        </section>
+      )}
 
       {services.isPending ? (
         <ListSkeleton />
@@ -85,6 +112,12 @@ export function ServicesPage() {
       )}
 
       <ServiceDialog open={open} onOpenChange={setOpen} service={editing} />
+      <CommunionDialog
+        open={choosingCommunion}
+        onOpenChange={setChoosingCommunion}
+        services={sorted.filter((service) => service.active)}
+        current={communion}
+      />
     </>
   )
 }

@@ -7,7 +7,7 @@ import { useAppForm } from "@/components/form"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { api, queryKeys, type Service, type ServiceInput } from "@/lib/api"
 import { toastError } from "@/lib/errors"
-import { ordinalOfMonth, WEEKDAY_INDEXES, weekdayName } from "@/lib/format"
+import { WEEKDAY_INDEXES, weekdayName } from "@/lib/format"
 
 type Props = {
   open: boolean
@@ -24,8 +24,6 @@ export function ServiceDialog({ open, onOpenChange, service }: Props) {
     </Dialog>
   )
 }
-
-const NO_COMMUNION = "none"
 
 function ServiceForm({ service, onDone }: { service?: Service; onDone: () => void }) {
   const { t } = useTranslation()
@@ -46,7 +44,6 @@ function ServiceForm({ service, onDone }: { service?: Service; onDone: () => voi
       weekday: String(service?.weekday ?? 0),
       startTime: service?.startTime ?? "19:00",
       active: service?.active ?? true,
-      communionWeek: service?.communionWeek ? String(service.communionWeek) : NO_COMMUNION,
     },
     validationLogic: revalidateLogic(),
     validators: {
@@ -68,7 +65,8 @@ function ServiceForm({ service, onDone }: { service?: Service; onDone: () => voi
           weekday: Number(value.weekday),
           startTime: value.startTime,
           active: value.active,
-          communionWeek: value.communionWeek === NO_COMMUNION ? null : Number(value.communionWeek),
+          // NOTE: The communion is chosen on its own card on the services page; editing a service keeps it.
+          communionWeek: service?.communionWeek ?? null,
         })
         .catch(() => undefined)
     },
@@ -104,21 +102,6 @@ function ServiceForm({ service, onDone }: { service?: Service; onDone: () => voi
             {(field) => <field.TextField type="time" label={t("services.dialog.time")} />}
           </form.AppField>
         </div>
-        <form.Subscribe selector={(state) => Number(state.values.weekday)}>
-          {(weekday) => (
-            <form.AppField name="communionWeek">
-              {(field) => (
-                <field.SelectField
-                  label={t("services.dialog.communion")}
-                  options={[
-                    { value: NO_COMMUNION, label: t("services.dialog.noCommunion") },
-                    ...[1, 2, 3, 4].map((week) => ({ value: String(week), label: ordinalOfMonth(week, weekday) })),
-                  ]}
-                />
-              )}
-            </form.AppField>
-          )}
-        </form.Subscribe>
         {service && (
           <form.AppField name="active">
             {(field) => <field.SwitchField label={t("services.dialog.active")} description={t("services.dialog.activeHint")} />}
