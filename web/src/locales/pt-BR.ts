@@ -283,6 +283,7 @@ export const ptBR = {
       groupOffline: "O WhatsApp está desconectado; dá para escolher o grupo depois.",
       groupLoading: "Carregando grupos…",
       noGroup: "Sem grupo",
+      savedGroup: "Grupo já escolhido",
       created: "Ministério criado",
       updated: "Ministério atualizado",
       archive: "Arquivar",

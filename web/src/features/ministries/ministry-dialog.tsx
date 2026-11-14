@@ -84,7 +84,7 @@ function MinistryForm({ ministry, onDone }: { ministry?: Ministry; onDone: () =>
   ]
   // NOTE: Keep the saved group selectable while the list is unavailable, so its name does not vanish.
   if (ministry?.whatsappGroup && !groupOptions.some((option) => option.value === ministry.whatsappGroup)) {
-    groupOptions.push({ value: ministry.whatsappGroup, label: ministry.whatsappGroup })
+    groupOptions.push({ value: ministry.whatsappGroup, label: t("ministries.dialog.savedGroup") })
   }
 
   return (
