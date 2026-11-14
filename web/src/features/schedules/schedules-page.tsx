@@ -1,4 +1,4 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { keepPreviousData, useMutation, usePrefetchQuery, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ArrowLeftRight,
   CalendarDays,
@@ -26,7 +26,7 @@ import { ConfirmButton } from "@/components/confirm-button"
 import { DateBlock } from "@/components/date-block"
 import { EmptyState } from "@/components/empty-state"
 import { ErrorState } from "@/components/error-state"
-import { CardSkeleton, ListSkeleton } from "@/components/list-skeleton"
+import { CardSkeleton } from "@/components/list-skeleton"
 import { AnimatedItem, quick, Swap } from "@/components/motion"
 import { Avatar } from "@/components/avatar"
 import { ListCard } from "@/components/list"
@@ -39,7 +39,6 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
-  ApiError,
   api,
   queryKeys,
   type CoverRequest,
@@ -51,6 +50,8 @@ import {
   type Unavailability,
 } from "@/lib/api"
 import { toastError } from "@/lib/errors"
+import { queries } from "@/lib/queries"
+import { useRetained } from "@/lib/use-retained"
 import {
   absenceLabel,
   dayAndTime,
@@ -74,7 +75,7 @@ import { UnavailabilityDialog } from "./unavailability-dialog"
 
 export function SchedulesPage() {
   const { t } = useTranslation()
-  const ministries = useQuery({ queryKey: queryKeys.ministries, queryFn: api.ministries.list })
+  const ministries = useQuery(queries.ministries())
   const [params, setParams] = useSearchParams()
   const [direction, setDirection] = useState(0)
   const month = params.get("mes") ?? nextMonth()
@@ -180,23 +181,19 @@ function BoardSkeleton() {
 function ScheduleBoard({ ministryId, month, direction }: { ministryId: number; month: string; direction: number }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const ministry = useQuery({
-    queryKey: queryKeys.ministry(ministryId),
-    queryFn: () => api.ministries.get(ministryId),
-    placeholderData: keepPreviousData,
-  })
+  const ministry = useQuery({ ...queries.ministry(ministryId), placeholderData: keepPreviousData })
   // NOTE: Keeping the previous month on screen while the next one loads avoids a skeleton between months.
-  const schedule = useQuery({
-    queryKey: queryKeys.schedule(ministryId, month),
-    queryFn: () => api.schedules.get(ministryId, month),
+  const schedule = useQuery({ ...queries.schedule(ministryId, month), placeholderData: keepPreviousData })
+  const covers = useQuery({
+    ...queries.covers(ministryId, month),
     placeholderData: keepPreviousData,
+    refetchInterval: 30_000,
+    meta: { background: true },
   })
+  const unavailabilities = useQuery({ ...queries.unavailabilities(month), placeholderData: keepPreviousData })
+  usePrefetchMonth(ministryId, shiftMonth(month, -1))
+  usePrefetchMonth(ministryId, shiftMonth(month, 1))
   const range = monthBounds(month)
-  const unavailabilities = useQuery({
-    queryKey: queryKeys.unavailabilities(range.from, range.to),
-    queryFn: () => api.unavailabilities.list(range.from, range.to),
-    placeholderData: keepPreviousData,
-  })
   const [selection, setSelection] = useState<SlotSelection | undefined>()
 
   const generate = useMutation({
@@ -208,19 +205,16 @@ function ScheduleBoard({ ministryId, month, direction }: { ministryId: number; m
     onError: toastError,
   })
 
-  const missing = schedule.error instanceof ApiError && schedule.error.status === 404
   const members = new Set(ministry.data?.members.map((member) => member.personId))
   const absences = (unavailabilities.data ?? []).filter((u) => members.has(u.personId))
-  const stale = schedule.isPlaceholderData || ministry.isPlaceholderData
+  const stale = schedule.isPlaceholderData || ministry.isPlaceholderData || covers.isPlaceholderData || unavailabilities.isPlaceholderData
   const view = schedule.data
-  const state =
-    (schedule.isPending && !view) || (ministry.isPending && !ministry.data)
-      ? "loading"
-      : missing
-        ? `empty-${ministryId}-${month}`
-        : schedule.isError || ministry.isError
-          ? "error"
-          : `board-${view?.ministryId}-${view?.month}`
+  const missing = view === null
+  // NOTE: The month draws once, with its board, swaps and absences together, so nothing pops in below it afterwards.
+  const loading = [schedule, ministry, covers, unavailabilities].some((query) => query.isPending)
+  // INVARIANT: shown changes only once every part of the new month arrived, so the parts never switch one by one.
+  const shown = useRetained(loading || stale ? undefined : `${ministryId}-${month}`)
+  const state = loading ? "loading" : schedule.isError || ministry.isError ? "error" : missing ? `empty-${shown}` : `board-${shown}`
 
   return (
     <div className="flex flex-col gap-8">
@@ -248,15 +242,17 @@ function ScheduleBoard({ ministryId, month, direction }: { ministryId: number; m
         </Swap>
       </div>
 
-      {schedule.data?.status === "published" && <CoversCard ministryId={ministryId} month={month} />}
+      {!loading && view?.status === "published" && <CoversCard covers={covers.data ?? []} />}
 
-      <AbsencesCard
-        list={absences}
-        loading={(unavailabilities.isPending && !unavailabilities.data) || (ministry.isPending && !ministry.data)}
-        error={unavailabilities.isError ? unavailabilities.error : null}
-        onRetry={() => void unavailabilities.refetch()}
-        defaultDate={range.from}
-      />
+      {!loading && (
+        <AbsencesCard
+          key={shown}
+          list={absences}
+          error={unavailabilities.isError ? unavailabilities.error : null}
+          onRetry={() => void unavailabilities.refetch()}
+          defaultDate={range.from}
+        />
+      )}
 
       {ministry.data && (
         <SlotDialog
@@ -550,8 +546,7 @@ function DraftBar({
   const discard = useMutation({
     mutationFn: () => api.schedules.discard(ministry.id, month),
     onSuccess: () => {
-      queryClient.removeQueries({ queryKey: queryKeys.schedule(ministry.id, month) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.schedule(ministry.id, month) })
+      queryClient.setQueryData(queryKeys.schedule(ministry.id, month), null)
       toast.success(t("schedules.discarded"))
     },
     onError: toastError,
@@ -648,13 +643,11 @@ function DraftBar({
 
 function AbsencesCard({
   list,
-  loading,
   error,
   onRetry,
   defaultDate,
 }: {
   list: Unavailability[]
-  loading: boolean
   error: Error | null
   onRetry: () => void
   defaultDate: string
@@ -686,9 +679,7 @@ function AbsencesCard({
           </Button>
         }
       />
-      {loading ? (
-        <ListSkeleton rows={2} />
-      ) : error ? (
+      {error ? (
         <ErrorState error={error} onRetry={onRetry} />
       ) : list.length === 0 ? (
         <p className="rounded-2xl border border-dashed px-4 py-5 text-sm text-pretty text-muted-foreground">{t("schedules.absencesEmpty")}</p>
@@ -733,22 +724,16 @@ function AbsencesCard({
 
 const COVER_BADGE = { open: "warning", covered: "success", uncovered: "destructive" } as const
 
-function CoversCard({ ministryId, month }: { ministryId: number; month: string }) {
+function CoversCard({ covers }: { covers: CoverRequest[] }) {
   const { t } = useTranslation()
-  const covers = useQuery({
-    queryKey: queryKeys.covers(ministryId, month),
-    queryFn: () => api.schedules.covers(ministryId, month),
-    refetchInterval: 30_000,
-    meta: { background: true },
-  })
-  if (!covers.data || covers.data.length === 0) {
+  if (covers.length === 0) {
     return null
   }
   return (
     <section aria-labelledby="covers" className="flex flex-col gap-3">
       <SectionHeader id="covers" title={t("schedules.covers")} icon={ArrowLeftRight} />
       <ListCard>
-        {covers.data.map((cover) => (
+        {covers.map((cover) => (
           <CoverItem key={cover.id} cover={cover} />
         ))}
       </ListCard>
@@ -782,4 +767,10 @@ function CoverItem({ cover }: { cover: CoverRequest }) {
       </p>
     </AnimatedItem>
   )
+}
+
+function usePrefetchMonth(ministryId: number, month: string) {
+  usePrefetchQuery(queries.schedule(ministryId, month))
+  usePrefetchQuery(queries.covers(ministryId, month))
+  usePrefetchQuery(queries.unavailabilities(month))
 }

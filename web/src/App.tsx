@@ -7,6 +7,7 @@ import { MemberShell } from "@/components/member-shell"
 import { RequireAdmin } from "@/components/require-admin"
 import { RequireSignedIn } from "@/components/require-signed-in"
 import { Skeleton } from "@/components/ui/skeleton"
+import { whenIdle } from "@/lib/idle"
 
 const screens = {
   signIn: () => import("@/features/auth/sign-in-page").then((m) => ({ default: m.SignInPage })),
@@ -32,8 +33,6 @@ const PeoplePage = lazy(screens.people)
 const SchedulesPage = lazy(screens.schedules)
 const ServicesPage = lazy(screens.services)
 
-const whenIdle = (task: () => void) =>
-  typeof requestIdleCallback === "function" ? requestIdleCallback(task, { timeout: 3000 }) : setTimeout(task, 1500)
 whenIdle(() => Object.values(screens).forEach((load) => void load()))
 
 function Page({ children }: { children: ReactNode }) {

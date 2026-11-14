@@ -9,6 +9,7 @@ import { useAppForm } from "@/components/form"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { api, queryKeys, type Person, type PersonInput } from "@/lib/api"
+import { queries } from "@/lib/queries"
 import { toastError } from "@/lib/errors"
 import { firstName, formatPhone, maskPhone, phoneDigits } from "@/lib/format"
 
@@ -32,7 +33,7 @@ export function PersonDialog({ open, onOpenChange, person, canArchive }: Props) 
 function PersonForm({ person, canArchive, onDone }: { person?: Person; canArchive?: boolean; onDone: () => void }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const health = useQuery({ queryKey: queryKeys.health, queryFn: api.health, meta: { background: true } })
+  const health = useQuery({ ...queries.health(), meta: { background: true } })
   const savedPhone = person ? formatPhone(person.phone) : ""
 
   const refresh = () => {

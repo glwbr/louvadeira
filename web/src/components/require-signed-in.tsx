@@ -6,14 +6,15 @@ import { Wordmark } from "@/components/brand"
 import { ErrorState } from "@/components/error-state"
 import { CardSkeleton } from "@/components/list-skeleton"
 import { Skeleton } from "@/components/ui/skeleton"
-import { ApiError, api, queryKeys, type Person } from "@/lib/api"
+import { ApiError, type Person } from "@/lib/api"
+import { queries } from "@/lib/queries"
 
 /**
  * NOTE: Renders children for whoever is signed in; anyone else goes to the sign-in page, where they can ask for a
  * link on WhatsApp. While loading it draws the same header the app will have, so nothing jumps.
  */
 export function RequireSignedIn({ children }: { children: (me: Person) => ReactNode }) {
-  const me = useQuery({ queryKey: queryKeys.me, queryFn: api.me, retry: false })
+  const me = useQuery({ ...queries.me(), retry: false })
 
   if (me.isPending) {
     return (

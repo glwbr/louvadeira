@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api, queryKeys, type Unavailability } from "@/lib/api"
+import { queries } from "@/lib/queries"
 import { toastError } from "@/lib/errors"
 import { useRetained } from "@/lib/use-retained"
 import { absenceLabel, firstName } from "@/lib/format"
@@ -49,7 +50,7 @@ function UnavailabilitySteps({ defaultDate, absence, onDone }: { defaultDate: st
 function UnavailabilityForm({ defaultDate, onSaved }: { defaultDate: string; onSaved: (u: Unavailability) => void }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const people = useQuery({ queryKey: queryKeys.people, queryFn: api.people.list })
+  const people = useQuery(queries.people())
 
   const save = useMutation({
     mutationFn: (input: Parameters<typeof api.unavailabilities.create>[0]) => api.unavailabilities.create(input),

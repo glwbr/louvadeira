@@ -13,7 +13,8 @@ import { QueryState } from "@/components/query-state"
 import { PageHeader } from "@/components/page-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { api, queryKeys, type Service } from "@/lib/api"
+import { type Service } from "@/lib/api"
+import { queries } from "@/lib/queries"
 import { communionLabel, formatTime, ordinalOfMonth, serviceLabel, weekdayShortName } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
@@ -22,7 +23,7 @@ import { ServiceDialog } from "./service-dialog"
 
 export function ServicesPage() {
   const { t } = useTranslation()
-  const services = useQuery({ queryKey: queryKeys.services, queryFn: api.services.list })
+  const services = useQuery(queries.services())
   const [editing, setEditing] = useState<Service | undefined>()
   const [open, setOpen] = useState(false)
   const [choosingCommunion, setChoosingCommunion] = useState(false)

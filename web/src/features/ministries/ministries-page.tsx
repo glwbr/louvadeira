@@ -11,14 +11,14 @@ import { AnimatedItem } from "@/components/motion"
 import { QueryState } from "@/components/query-state"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
-import { api, queryKeys } from "@/lib/api"
+import { queries } from "@/lib/queries"
 import { rotationLabel } from "@/lib/format"
 
 import { MinistryDialog } from "./ministry-dialog"
 
 export function MinistriesPage() {
   const { t } = useTranslation()
-  const ministries = useQuery({ queryKey: queryKeys.ministries, queryFn: api.ministries.list })
+  const ministries = useQuery(queries.ministries())
   const [open, setOpen] = useState(false)
 
   const add = (

@@ -1,11 +1,15 @@
+import { useQueryClient } from "@tanstack/react-query"
 import { CalendarClock, CalendarDays, Church, Home, Users, type LucideIcon } from "lucide-react"
 import { motion } from "motion/react"
+import { useEffect } from "react"
 import { useTranslation } from "react-i18next"
 import { Link, NavLink, Outlet } from "react-router"
 
 import { Wordmark } from "@/components/brand"
 import { spring } from "@/components/motion"
 import { ActivityBar, SignOutButton } from "@/components/shell-parts"
+import { whenIdle } from "@/lib/idle"
+import { prefetchScreen } from "@/lib/queries"
 import { cn } from "@/lib/utils"
 
 type NavItem = { to: string; label: "nav.home" | "nav.schedules" | "nav.ministries" | "nav.people" | "nav.services"; icon: LucideIcon; end: boolean }
@@ -20,6 +24,12 @@ const NAV: NavItem[] = [
 
 export function AppShell() {
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  // NOTE: A screen's data is fetched while the finger is still on its tab, so it opens drawn instead of filling in.
+  const warm = (to: string) => () => void prefetchScreen(queryClient, to)
+
+  // NOTE: Once the first screen settles, the others are warmed up too, so moving between tabs is instant.
+  useEffect(() => whenIdle(() => NAV.forEach(({ to }) => void prefetchScreen(queryClient, to))), [queryClient])
 
   return (
     <div className="min-h-svh pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-12">
@@ -35,6 +45,8 @@ export function AppShell() {
                 key={to}
                 to={to}
                 end={end}
+                onPointerEnter={warm(to)}
+                onFocus={warm(to)}
                 className="relative flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground aria-[current=page]:text-foreground"
               >
                 {({ isActive }) => (
@@ -69,6 +81,8 @@ export function AppShell() {
               key={to}
               to={to}
               end={end}
+              onPointerDown={warm(to)}
+              onFocus={warm(to)}
               className="group flex flex-col items-center justify-center gap-1 text-[11px] font-medium text-muted-foreground transition-colors aria-[current=page]:text-foreground"
             >
               {({ isActive }) => (

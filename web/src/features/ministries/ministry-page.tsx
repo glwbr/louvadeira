@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, usePrefetchQuery, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowDown, ArrowLeft, ArrowUp, CalendarClock, Crown, ListChecks, Pencil, Pin, Plus, Users } from "lucide-react"
 import { motion } from "motion/react"
 import { useState } from "react"
@@ -19,6 +19,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ApiError, api, queryKeys, type Member, type MinistryDetail, type Role } from "@/lib/api"
+import { queries } from "@/lib/queries"
 import { toastError } from "@/lib/errors"
 import { communionLabel, rotationLabel, serviceLabel } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -30,7 +31,10 @@ import { RoleDialog } from "./role-dialog"
 export function MinistryPage() {
   const { t } = useTranslation()
   const id = Number(useParams().id)
-  const ministry = useQuery({ queryKey: queryKeys.ministry(id), queryFn: () => api.ministries.get(id) })
+  const ministry = useQuery(queries.ministry(id))
+  // NOTE: The other tabs' lists load with the page, so switching tabs never waits on the network.
+  usePrefetchQuery(queries.people())
+  usePrefetchQuery(queries.services())
   const [editing, setEditing] = useState(false)
 
   const back = (
@@ -117,7 +121,7 @@ function Count({ value }: { value: number }) {
 
 function TeamTab({ ministry }: { ministry: MinistryDetail }) {
   const { t } = useTranslation()
-  const people = useQuery({ queryKey: queryKeys.people, queryFn: api.people.list })
+  const people = useQuery(queries.people())
   const [selected, setSelected] = useState<Member | undefined>()
   const [open, setOpen] = useState(false)
   const roleNames = new Map(ministry.roles.map((role) => [role.id, role.name]))
@@ -312,7 +316,7 @@ function RolesTab({ ministry }: { ministry: MinistryDetail }) {
 function ServicesTab({ ministry }: { ministry: MinistryDetail }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const services = useQuery({ queryKey: queryKeys.services, queryFn: api.services.list })
+  const services = useQuery(queries.services())
   const key = queryKeys.ministry(ministry.id)
   const save = useMutation({
     mutationFn: (serviceIds: number[]) => api.ministries.setServices(ministry.id, serviceIds),

@@ -20,6 +20,7 @@ import { RoleIcon } from "@/components/role-icon"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api, queryKeys, type AssignmentStatus, type MemberSlot, type Unavailability } from "@/lib/api"
+import { queries } from "@/lib/queries"
 import { toastError } from "@/lib/errors"
 import { absenceLabel, firstName, formatDay, reasonLabel, weekdayOf } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -65,7 +66,7 @@ function groupByService(slots: MemberSlot[]): Service[] {
 
 export function MemberPage() {
   const { t } = useTranslation()
-  const me = useQuery({ queryKey: queryKeys.me, queryFn: api.me })
+  const me = useQuery(queries.me())
   const slots = useQuery({ queryKey: queryKeys.mySlots, queryFn: api.mine.slots })
   const absences = useQuery({ queryKey: queryKeys.myAbsences, queryFn: api.mine.absences })
 

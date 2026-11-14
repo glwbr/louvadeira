@@ -15,7 +15,8 @@ import { PageHeader } from "@/components/page-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { api, queryKeys, type Person } from "@/lib/api"
+import { type Person } from "@/lib/api"
+import { queries } from "@/lib/queries"
 import { formatPhone } from "@/lib/format"
 
 import { PersonDialog } from "./person-dialog"
@@ -24,8 +25,8 @@ const SEARCH_FROM = 6
 
 export function PeoplePage() {
   const { t } = useTranslation()
-  const people = useQuery({ queryKey: queryKeys.people, queryFn: api.people.list })
-  const me = useQuery({ queryKey: queryKeys.me, queryFn: api.me })
+  const people = useQuery(queries.people())
+  const me = useQuery(queries.me())
   const filter = useAppForm({ defaultValues: { search: "" } })
   const search = useStore(filter.store, (state) => state.values.search)
   const setSearch = (value: string) => filter.setFieldValue("search", value)

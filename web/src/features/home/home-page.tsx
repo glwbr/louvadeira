@@ -14,18 +14,19 @@ import { RoleIcon } from "@/components/role-icon"
 import { SlotStatusIcon } from "@/components/slot-status"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { ApiError, api, queryKeys, type Health, type Ministry, type ScheduleService } from "@/lib/api"
-import { firstName, longDate, shiftMonth, thisMonth, todayISO } from "@/lib/format"
+import { type Health, type Ministry, type ScheduleService } from "@/lib/api"
+import { queries, upcomingMonths } from "@/lib/queries"
+import { firstName, longDate, todayISO } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 const UPCOMING_LIMIT = 3
 
 export function HomePage() {
   const { t } = useTranslation()
-  const me = useQuery({ queryKey: queryKeys.me, queryFn: api.me })
-  const ministries = useQuery({ queryKey: queryKeys.ministries, queryFn: api.ministries.list })
-  const people = useQuery({ queryKey: queryKeys.people, queryFn: api.people.list })
-  const services = useQuery({ queryKey: queryKeys.services, queryFn: api.services.list })
+  const me = useQuery(queries.me())
+  const ministries = useQuery(queries.ministries())
+  const people = useQuery(queries.people())
+  const services = useQuery(queries.services())
 
   return (
     <div className="flex flex-col gap-8">
@@ -97,21 +98,8 @@ type Upcoming = { ministry: Ministry; month: string; service: ScheduleService }
 
 function Upcoming({ ministries }: { ministries: Ministry[] }) {
   const { t } = useTranslation()
-  const months = [thisMonth(), shiftMonth(thisMonth(), 1)]
-  const pairs = ministries.flatMap((ministry) => months.map((month) => ({ ministry, month })))
-  const schedules = useQueries({
-    queries: pairs.map(({ ministry, month }) => ({
-      queryKey: [...queryKeys.schedule(ministry.id, month), "upcoming"],
-      // NOTE: A month without a schedule is normal here, not an error.
-      queryFn: () =>
-        api.schedules.get(ministry.id, month).catch((error: unknown) => {
-          if (error instanceof ApiError && error.status === 404) {
-            return null
-          }
-          throw error
-        }),
-    })),
-  })
+  const pairs = ministries.flatMap((ministry) => upcomingMonths().map((month) => ({ ministry, month })))
+  const schedules = useQueries({ queries: pairs.map(({ ministry, month }) => queries.schedule(ministry.id, month)) })
 
   if (schedules.some((query) => query.isPending)) {
     return <UpcomingSkeleton />
@@ -264,12 +252,7 @@ const MODES: Record<Health["whatsapp"]["mode"], "off" | "test" | "live" | "unkno
 
 function WhatsAppStatus() {
   const { t } = useTranslation()
-  const health = useQuery({
-    queryKey: queryKeys.health,
-    queryFn: api.health,
-    refetchInterval: 10_000,
-    meta: { background: true },
-  })
+  const health = useQuery({ ...queries.health(), refetchInterval: 10_000, meta: { background: true } })
   const mode = health.data ? MODES[health.data.whatsapp.mode] : undefined
   const live = health.data?.whatsapp.linked && health.data.whatsapp.connected
 
