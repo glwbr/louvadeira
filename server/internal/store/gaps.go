@@ -2,7 +2,15 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"time"
+)
+
+var (
+	ErrNotMember      = errors.New("a pessoa não faz parte do ministério")
+	ErrAway           = errors.New("a pessoa avisou que não pode nesse dia")
+	ErrNothingMissing = errors.New("não falta mais ninguém nessa função")
 )
 
 /**
@@ -134,4 +142,93 @@ func (s *Store) freeForRole(ctx context.Context, g ServiceGap) ([]string, error)
 		names = append(names, name)
 	}
 	return names, rows.Err()
+}
+
+/**
+ * NOTE: A place a volunteer took. Absent is who had said they could not go, nil when the place was empty, and Waiting
+ * the people still invited to cover it.
+ */
+type FilledGap struct {
+	Assignment AssignmentDetail
+	Absent     *Person
+	Waiting    []Person
+}
+
+const awayOn = `
+	SELECT 1 FROM unavailabilities u WHERE u.person_id = ? AND u.start_date <= ? AND u.end_date >= ?
+	  AND (u.repeat = 'none' OR (u.weekday = ? AND (u.repeat = 'weekly' OR u.week_of_month = ?)))`
+
+/**
+ * INVARIANT: The first volunteer wins each place. Checking the person, taking an empty place of the role (or else one
+ * somebody declined) and closing its swap happen in one transaction, so two volunteers never get the same place and
+ * nobody serves twice in one service.
+ */
+func (s *Store) FillGap(ctx context.Context, ministryID, serviceID int64, date string, roleID, personID int64, now time.Time) (FilledGap, error) {
+	day, _ := time.Parse("2006-01-02", date)
+	var assignmentID, requestID int64
+	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		var member, busy, away bool
+		if err := tx.QueryRowContext(ctx,
+			"SELECT EXISTS (SELECT 1 FROM ministry_members WHERE ministry_id = ? AND person_id = ?)", ministryID, personID).Scan(&member); err != nil {
+			return err
+		}
+		if !member {
+			return ErrNotMember
+		}
+		if err := tx.QueryRowContext(ctx, `
+			SELECT EXISTS (SELECT 1 FROM assignments WHERE service_id = ? AND service_date = ? AND person_id = ?)`,
+			serviceID, date, personID).Scan(&busy); err != nil {
+			return err
+		}
+		if busy {
+			return ErrAlreadyServing
+		}
+		if err := tx.QueryRowContext(ctx, "SELECT EXISTS ("+awayOn+")",
+			personID, date, date, int(day.Weekday()), nthWeekdayOfMonth(date)).Scan(&away); err != nil {
+			return err
+		}
+		if away {
+			return ErrAway
+		}
+		var holder sql.NullInt64
+		err := tx.QueryRowContext(ctx, `
+			SELECT a.id, a.person_id FROM assignments a JOIN schedules sc ON sc.id = a.schedule_id
+			WHERE sc.ministry_id = ? AND sc.status = 'published' AND a.service_id = ? AND a.service_date = ? AND a.role_id = ?
+			  AND (a.person_id IS NULL OR a.status = 'declined')
+			ORDER BY a.person_id IS NOT NULL, a.slot LIMIT 1`, ministryID, serviceID, date, roleID).Scan(&assignmentID, &holder)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNothingMissing
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx,
+			"UPDATE assignments SET person_id = ?, status = 'confirmed', responded_at = ? WHERE id = ?", personID, formatTime(now), assignmentID); err != nil {
+			return err
+		}
+		if !holder.Valid {
+			return nil
+		}
+		err = tx.QueryRowContext(ctx, `
+			UPDATE cover_requests SET status = 'covered', covered_by = ?, resolved_at = ?
+			WHERE id = (SELECT id FROM cover_requests WHERE assignment_id = ? AND status IN ('open', 'uncovered')
+			            ORDER BY created_at DESC LIMIT 1)
+			RETURNING id`, personID, formatTime(now), assignmentID).Scan(&requestID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	})
+	if err != nil {
+		return FilledGap{}, err
+	}
+	if requestID != 0 {
+		result, err := s.coverResult(ctx, requestID)
+		if err != nil {
+			return FilledGap{}, err
+		}
+		return FilledGap{Assignment: result.Assignment, Absent: &result.Absent, Waiting: result.Waiting}, nil
+	}
+	d, err := s.AssignmentDetail(ctx, assignmentID)
+	return FilledGap{Assignment: d}, err
 }

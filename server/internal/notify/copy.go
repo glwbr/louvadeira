@@ -377,6 +377,7 @@ func plural(n int, one, many string) string {
 
 const (
 	optionGapKeep = "✅ Segue assim"
+	optionGapAsk  = "📣 Pedir no grupo"
 )
 
 /**
@@ -419,4 +420,58 @@ func gapKeptAlert(leader, ministry, date, startTime string) string {
 
 func gapEditReply() string {
 	return "Combinado! É só ajustar a escala pelo app 🙂"
+}
+
+func gapAlreadyAskedReply() string {
+	return "Já pedi no grupo 🙂 Quando alguém topar, a mudança aparece lá."
+}
+
+func gapCalledReply(ministry string) string {
+	return fmt.Sprintf("📣 *Pronto!* Pedi no grupo do %s. Quem marcar primeiro fica com o lugar, e a mudança aparece lá.", ministry)
+}
+
+func gapCallFailedReply() string {
+	return "😕 Não consegui mandar no grupo agora. Dá para ajustar a escala pelo app."
+}
+
+func gapClosedReply() string {
+	return "✅ Não falta mais ninguém nesse culto 🙂"
+}
+
+/**
+ * NOTE: "🙋 Eu posso (Voz)": the role goes in brackets so the label needs no "no/na" for it.
+ */
+func gapTakeOption(role string) string {
+	return "🙋 Eu posso (" + role + ")"
+}
+
+func gapRoleName(label string) string {
+	return strings.TrimSuffix(strings.TrimPrefix(label, "🙋 Eu posso ("), ")")
+}
+
+func gapCallQuestion(gaps []store.ServiceGap) string {
+	first := gaps[0]
+	roles := make([]string, len(gaps))
+	for i, g := range gaps {
+		roles[i] = g.RoleName
+	}
+	return fmt.Sprintf("🙋 %s · %s, %s, às %s\nAinda falta gente nesse culto: %s. Quem pode ajudar? Quem marcar primeiro fica com o lugar 🙏",
+		first.MinistryName, capitalize(weekday(first.Date)), dayMonth(first.Date), hour(first.StartTime), joinNames(roles))
+}
+
+func gapFilledAnnouncement(ministry, volunteer, line string) string {
+	return fmt.Sprintf("🙌 *Mudança na escala do %s*\n%s entra na escala\n%s", ministry, volunteer, line)
+}
+
+func outsiderReply(name string) string {
+	return fmt.Sprintf("Obrigado, %s! 🙏 Avisei a liderança, que vai falar com você.", firstName(name))
+}
+
+func outsiderAlert(name, ministry, role, date, startTime string) string {
+	return fmt.Sprintf("🙋 *%s* se ofereceu para %s no culto de %s, mas não está na equipe do %s. Dá para incluir pelo app.",
+		name, role, whenAt(date, startTime), ministry)
+}
+
+func awayVolunteerReply(name string) string {
+	return fmt.Sprintf("Obrigado, %s! 🙏 Você avisou que não pode nesse dia. Se mudou, fala com a liderança 🙂", firstName(name))
 }

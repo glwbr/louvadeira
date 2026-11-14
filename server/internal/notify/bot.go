@@ -504,6 +504,10 @@ func (b *Bot) applyVote(ctx context.Context, vote messenger.Vote) {
 	if len(chosen) == 0 {
 		return
 	}
+	if hasAction(poll.Options, actionGapTake) {
+		b.answerGroupCall(ctx, vote, chosen[len(chosen)-1])
+		return
+	}
 	person, ok := b.person(ctx, poll.PersonID)
 	if !ok {
 		return
