@@ -7,27 +7,46 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { api, queryKeys, type Reason } from "@/lib/api"
+import { Skeleton } from "@/components/ui/skeleton"
+import { api, queryKeys, type Reason, type Unavailability } from "@/lib/api"
 import { toastError } from "@/lib/errors"
-import { REASON_LABEL } from "@/lib/format"
+import { firstName, formatDateRange, formatDay, REASON_LABEL, weekdayOf } from "@/lib/format"
 
 type Props = {
   open: boolean
   onOpenChange: (open: boolean) => void
   defaultDate: string
+  /** NOTE: An absence already registered: the dialog opens straight on offering swaps for it. */
+  absence?: Unavailability
 }
 
-export function UnavailabilityDialog({ open, onOpenChange, defaultDate }: Props) {
+export function UnavailabilityDialog({ open, onOpenChange, defaultDate, absence }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        {open && <UnavailabilityForm defaultDate={defaultDate} onDone={() => onOpenChange(false)} />}
+        {open && <UnavailabilitySteps defaultDate={defaultDate} absence={absence} onDone={() => onOpenChange(false)} />}
       </DialogContent>
     </Dialog>
   )
 }
 
-function UnavailabilityForm({ defaultDate, onDone }: { defaultDate: string; onDone: () => void }) {
+function UnavailabilitySteps({
+  defaultDate,
+  absence,
+  onDone,
+}: {
+  defaultDate: string
+  absence?: Unavailability
+  onDone: () => void
+}) {
+  const [saved, setSaved] = useState(absence)
+  if (saved) {
+    return <OpenCovers absence={saved} onDone={onDone} />
+  }
+  return <UnavailabilityForm defaultDate={defaultDate} onSaved={(u) => (u.scheduled > 0 ? setSaved(u) : onDone())} />
+}
+
+function UnavailabilityForm({ defaultDate, onSaved }: { defaultDate: string; onSaved: (u: Unavailability) => void }) {
   const queryClient = useQueryClient()
   const people = useQuery({ queryKey: queryKeys.people, queryFn: api.people.list })
   const [personId, setPersonId] = useState("")
@@ -37,11 +56,11 @@ function UnavailabilityForm({ defaultDate, onDone }: { defaultDate: string; onDo
 
   const save = useMutation({
     mutationFn: () => api.unavailabilities.create({ personId: Number(personId), startDate, endDate, reason: reason as Reason }),
-    onSuccess: () => {
+    onSuccess: (saved) => {
       queryClient.invalidateQueries({ queryKey: ["unavailabilities"] })
       queryClient.invalidateQueries({ queryKey: ["schedules"] })
       toast.success("Indisponibilidade registrada")
-      onDone()
+      onSaved(saved)
     },
     onError: toastError,
   })
@@ -55,7 +74,10 @@ function UnavailabilityForm({ defaultDate, onDone }: { defaultDate: string; onDo
     <form onSubmit={submit} className="flex flex-col gap-4">
       <DialogHeader>
         <DialogTitle>Quem não pode</DialogTitle>
-        <DialogDescription>O gerador não escala a pessoa nesses dias.</DialogDescription>
+        <DialogDescription>
+          O gerador não escala a pessoa nesses dias. Se ela já estiver numa escala publicada, você pode abrir trocas em
+          seguida.
+        </DialogDescription>
       </DialogHeader>
       <div className="grid gap-2">
         <Label>Pessoa</Label>
@@ -119,5 +141,72 @@ function UnavailabilityForm({ defaultDate, onDone }: { defaultDate: string; onDo
         </Button>
       </DialogFooter>
     </form>
+  )
+}
+
+function OpenCovers({ absence, onDone }: { absence: Unavailability; onDone: () => void }) {
+  const queryClient = useQueryClient()
+  const slots = useQuery({
+    queryKey: queryKeys.unavailabilityAssignments(absence.id),
+    queryFn: () => api.unavailabilities.assignments(absence.id),
+  })
+  const open = useMutation({
+    mutationFn: () => api.unavailabilities.openCovers(absence.id),
+    onSuccess: (requests) => {
+      queryClient.invalidateQueries({ queryKey: ["unavailabilities"] })
+      queryClient.invalidateQueries({ queryKey: ["schedules"] })
+      toast.success(requests.length === 1 ? "Troca aberta" : `${requests.length} trocas abertas`)
+      onDone()
+    },
+    onError: toastError,
+  })
+
+  const count = slots.data?.length ?? absence.scheduled
+  const ministries = new Set(slots.data?.map((slot) => slot.ministryId))
+
+  return (
+    <div className="flex flex-col gap-4">
+      <DialogHeader>
+        <DialogTitle>Abrir trocas</DialogTitle>
+        <DialogDescription>
+          {firstName(absence.personName)} tem {count === 1 ? "1 culto" : `${count} cultos`} na escala de{" "}
+          {formatDateRange(absence.startDate, absence.endDate)}. Quem pode cobrir recebe uma enquete no WhatsApp com os
+          cultos que pode pegar, e quem marcar primeiro fica com o culto.
+        </DialogDescription>
+      </DialogHeader>
+      {slots.isPending ? (
+        <div className="flex flex-col gap-2">
+          <Skeleton className="h-5 w-3/4" />
+          <Skeleton className="h-5 w-2/3" />
+        </div>
+      ) : count === 0 ? (
+        <p className="text-sm text-muted-foreground">Nenhum culto para trocar: as trocas já foram abertas.</p>
+      ) : (
+        <ul className="flex flex-col gap-1.5 text-sm">
+          {slots.data?.map((slot) => (
+            <li key={slot.assignmentId} className="flex items-baseline justify-between gap-3">
+              <span>
+                {weekdayOf(slot.date)} {formatDay(slot.date)} · {slot.startTime.replace(":", "h")}
+              </span>
+              <span className="text-muted-foreground">
+                {slot.roleName}
+                {ministries.size > 1 && ` · ${slot.ministryName}`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-xs text-muted-foreground">
+        O motivo ({REASON_LABEL[absence.reason].toLowerCase()}) só aparece para a liderança.
+      </p>
+      <DialogFooter>
+        <Button variant="outline" onClick={onDone}>
+          Agora não
+        </Button>
+        <Button onClick={() => open.mutate()} disabled={open.isPending || slots.isPending || count === 0}>
+          {open.isPending ? "Abrindo…" : count === 1 ? "Abrir troca" : `Abrir trocas para os ${count}`}
+        </Button>
+      </DialogFooter>
+    </div>
   )
 }

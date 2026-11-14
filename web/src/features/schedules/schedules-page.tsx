@@ -296,6 +296,7 @@ function SlotChip({ slot, onClick }: { slot: ScheduleSlot; onClick: () => void }
 function UnavailabilityCard({ list, defaultDate }: { list: Unavailability[]; defaultDate: string }) {
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
+  const [swapsFor, setSwapsFor] = useState<Unavailability>()
   const remove = useMutation({
     mutationFn: (id: number) => api.unavailabilities.remove(id),
     onSuccess: () => {
@@ -329,6 +330,12 @@ function UnavailabilityCard({ list, defaultDate }: { list: Unavailability[]; def
                   {formatDateRange(u.startDate, u.endDate)} · {REASON_LABEL[u.reason]}
                 </p>
               </div>
+              {u.scheduled > 0 && (
+                <Button size="sm" variant="outline" onClick={() => setSwapsFor(u)}>
+                  <ArrowLeftRight />
+                  {u.scheduled === 1 ? "Abrir troca" : `Abrir ${u.scheduled} trocas`}
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="icon"
@@ -343,6 +350,12 @@ function UnavailabilityCard({ list, defaultDate }: { list: Unavailability[]; def
         </ul>
       )}
       <UnavailabilityDialog open={open} onOpenChange={setOpen} defaultDate={defaultDate} />
+      <UnavailabilityDialog
+        open={Boolean(swapsFor)}
+        onOpenChange={(next) => !next && setSwapsFor(undefined)}
+        defaultDate={defaultDate}
+        absence={swapsFor}
+      />
     </section>
   )
 }

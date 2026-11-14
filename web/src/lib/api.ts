@@ -151,9 +151,22 @@ export type Unavailability = {
   startDate: string
   endDate: string
   reason: Reason
+  /** NOTE: Services the person still holds in published schedules during the absence, swaps not opened yet. */
+  scheduled: number
 }
 
-export type UnavailabilityInput = Omit<Unavailability, "id" | "personName">
+export type UnavailabilityInput = Omit<Unavailability, "id" | "personName" | "scheduled">
+
+export type AffectedSlot = {
+  assignmentId: number
+  ministryId: number
+  ministryName: string
+  date: string
+  startTime: string
+  serviceName: string
+  roleName: string
+  status: AssignmentStatus
+}
 
 export class ApiError extends Error {
   readonly status: number
@@ -243,6 +256,8 @@ export const api = {
     list: (from: string, to: string) => request<Unavailability[]>("GET", `/unavailabilities?from=${from}&to=${to}`),
     create: (input: UnavailabilityInput) => request<Unavailability>("POST", "/unavailabilities", input),
     remove: (id: number) => request<void>("DELETE", `/unavailabilities/${id}`),
+    assignments: (id: number) => request<AffectedSlot[]>("GET", `/unavailabilities/${id}/assignments`),
+    openCovers: (id: number) => request<CoverRequest[]>("POST", `/unavailabilities/${id}/covers`),
   },
 }
 
@@ -257,4 +272,5 @@ export const queryKeys = {
   covers: (ministryId: number, month: string) => ["schedules", ministryId, month, "covers"] as const,
   whatsappGroups: ["whatsapp-groups"] as const,
   unavailabilities: (from: string, to: string) => ["unavailabilities", from, to] as const,
+  unavailabilityAssignments: (id: number) => ["unavailabilities", id, "assignments"] as const,
 }
