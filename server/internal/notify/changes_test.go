@@ -85,6 +85,7 @@ func TestALeaderChangeSettlesTheSwapOfWhoCouldNotGo(t *testing.T) {
 	if len(free) < 2 {
 		t.Fatalf("free voices = %v", free)
 	}
+	lateInvite := w.fake.sentPollFor(t, w.phone(free[1]), "22/11")
 	w.fake.reset()
 
 	w.change(slot, free[0])
@@ -103,6 +104,21 @@ func TestALeaderChangeSettlesTheSwapOfWhoCouldNotGo(t *testing.T) {
 	}
 	if covers, _ := w.store.CoverRequestsForSchedule(context.Background(), w.ministry.ID, w.month); len(covers) != 1 || covers[0].Status != store.CoverCovered {
 		t.Fatalf("covers = %+v", covers)
+	}
+
+	w.fake.reset()
+	w.vote(lateInvite, "✅ Consigo", false)
+	if replies := w.fake.to(w.phone(free[1])); len(replies) != 1 || replies[0].text != "Obrigado pela disposição! 🙏 Esse já foi resolvido." {
+		t.Fatalf("late volunteer = %+v", replies)
+	}
+	if len(w.fake.sent) != 1 {
+		t.Fatalf("a late vote told others: %+v", w.fake.sent)
+	}
+	if now := w.voiceOf(free[0]); now.AssignmentID != slot.AssignmentID || now.Status != store.AssignmentScheduled {
+		t.Fatalf("the late vote moved the place: %+v", now)
+	}
+	if late := w.voiceOf(free[1]); late.AssignmentID != 0 {
+		t.Fatalf("the late volunteer got a place: %+v", late)
 	}
 }
 
