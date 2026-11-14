@@ -25,7 +25,7 @@ func TestOnlyCommandsFromTheTeamGetAnAnswer(t *testing.T) {
 	w.says(bassist, "Escala")
 	replies := w.fake.to(w.phone(bassist))
 	if len(replies) != 1 || !strings.Contains(replies[0].text, "Suas próximas escalas") ||
-		!strings.Contains(replies[0].text, "• Quinta, 19/11, às 19h30 — Baixo · falta confirmar") {
+		!strings.Contains(replies[0].text, "• Quinta, 19/11, às 19h30 · Baixo · ⏳ falta confirmar") {
 		t.Fatalf("schedule reply = %+v", replies)
 	}
 }
@@ -37,7 +37,7 @@ func TestCannotOnADayAsksFirstAndThenFindsASubstitute(t *testing.T) {
 
 	w.says(bassist, "Não posso dia 19")
 	poll := lastPoll(t, w.fake.to(w.phone(bassist)))
-	if !strings.Contains(poll.text, "você não vai poder em 19/11?") || !strings.Contains(poll.text, "• Quinta, 19/11, às 19h30 — Baixo") {
+	if !strings.Contains(poll.text, "você não vai poder em 19/11?") || !strings.Contains(poll.text, "• Quinta, 19/11, às 19h30 · Baixo") {
 		t.Fatalf("question = %q", poll.text)
 	}
 	if slot := w.slotOf("2026-11-19", "Baixo"); slot.Status != store.AssignmentScheduled {
@@ -122,10 +122,47 @@ func TestAnAbsenceWithoutServicesIsNotedForTheLeaders(t *testing.T) {
 	w := newWorld(t)
 	w.says("Ana", "não vou poder de 10/12 a 20/12")
 	w.vote(lastPoll(t, w.fake.to(w.phone("Ana"))), "😕 Isso, pode avisar", false)
-	if !containsText(w.fake.to(w.phone("Ana")), "Anotado, Ana! A gente não coloca você na escala de 10/12 a 20/12") {
+	if !containsText(w.fake.to(w.phone("Ana")), "Anotado*, Ana! A gente não coloca você na escala de 10/12 a 20/12") {
 		t.Fatalf("ana = %+v", w.fake.to(w.phone("Ana")))
 	}
-	if !containsText(w.fake.to(w.phone("Líder")), "📅 Ana avisou que não vai poder de 10/12 a 20/12.") {
+	if !containsText(w.fake.to(w.phone("Líder")), "📅 *Ana* avisou que não vai poder de 10/12 a 20/12.") {
 		t.Fatalf("leader = %+v", w.fake.to(w.phone("Líder")))
+	}
+}
+
+func TestALeaderAwayHearsWhatHasNoSubstitute(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	ministry, _ := w.store.Ministry(ctx, w.ministry.ID)
+	var voice int64
+	for _, role := range ministry.Roles {
+		if role.Name == "Voz" {
+			voice = role.ID
+		}
+	}
+	if err := w.store.PutMember(ctx, w.ministry.ID, w.people["Bia"].ID, store.MemberInput{IsLeader: true,
+		Roles: []store.MemberRole{{RoleID: voice}}}); err != nil {
+		t.Fatal(err)
+	}
+	w.says("Líder", "não posso dia 19")
+	w.vote(lastPoll(t, w.fake.to(w.phone("Líder"))), "😕 Isso, pode avisar", false)
+
+	reply := w.fake.to(w.phone("Líder"))
+	if !containsText(reply, "Ninguém da equipe está livre para:\n• Quinta, 19/11, às 19h30 · Violão") || containsText(reply, "⚠️ *Líder*") {
+		t.Fatalf("leader's own messages = %+v", reply)
+	}
+	if !containsText(w.fake.to(w.phone("Bia")), "• Quinta, 19/11, às 19h30\n   ◦ Voz: chamei") ||
+		!containsText(w.fake.to(w.phone("Bia")), "   ◦ Violão: ninguém livre") {
+		t.Fatalf("other leader = %+v", w.fake.to(w.phone("Bia")))
+	}
+}
+
+func TestScheduleOnlyShowsPendingInsideTheConfirmationWeek(t *testing.T) {
+	w := newWorld(t)
+	w.says("Líder", "escala")
+	reply := w.fake.to(w.phone("Líder"))
+	if !containsText(reply, "• Quinta, 19/11, às 19h30 · Voz e Violão · ⏳ falta confirmar") ||
+		!containsText(reply, "• Domingo, 29/11, às 19h · Voz e Violão\n") {
+		t.Fatalf("schedule = %+v", reply)
 	}
 }

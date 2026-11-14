@@ -103,7 +103,7 @@ func TestAccessLinkArrivesOnWhatsApp(t *testing.T) {
 		t.Fatalf("known phone: %d", rec.Code)
 	}
 	h.do(http.MethodPost, "/api/auth/link", `{"phone":"11 91111-1111"}`)
-	if len(h.polls.texts) != 1 || !strings.HasPrefix(h.polls.texts[0], "Oi, Edu!") {
+	if len(h.polls.texts) != 1 || !strings.Contains(h.polls.texts[0], "Oi, Edu!") {
 		t.Fatalf("texts = %v", h.polls.texts)
 	}
 	match := linkPattern.FindStringSubmatch(h.polls.texts[0])

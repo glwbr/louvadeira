@@ -167,17 +167,19 @@ func (b *Bot) allows(to string) bool {
  * NOTE: Sends to the ministry's leaders, except the people the news is about: a leader who is away already knows,
  * and a leader who covers already got their own reply.
  */
-func (b *Bot) tellLeaders(ctx context.Context, ministryID int64, text string, about ...int64) {
+func (b *Bot) tellLeaders(ctx context.Context, ministryID int64, text string, about ...int64) int {
 	leaders, err := b.Store.Leaders(ctx, ministryID)
 	if err != nil {
 		b.Log.Error("buscar líderes", "erro", err)
-		return
+		return 0
 	}
+	told := 0
 	for _, leader := range leaders {
-		if !containsID(about, leader.ID) {
-			b.send(ctx, leader.Phone, text)
+		if !containsID(about, leader.ID) && b.send(ctx, leader.Phone, text) {
+			told++
 		}
 	}
+	return told
 }
 
 func (b *Bot) person(ctx context.Context, id int64) (store.Person, bool) {
@@ -308,13 +310,11 @@ func occurrencesOf(slots []store.AssignmentDetail) []occurrence {
 func (b *Bot) askConfirmation(ctx context.Context, slots []store.AssignmentDetail) bool {
 	first := slots[0]
 	occurrences := occurrencesOf(slots)
-	var lines []string
 	var all []int64
 	for _, o := range occurrences {
-		lines = append(lines, confirmLine(o))
 		all = append(all, o.assignments...)
 	}
-	question := confirmQuestion(first.PersonName, first.MinistryName, lines)
+	question := confirmQuestion(first.PersonName, first.MinistryName, occurrences)
 
 	options := []store.PollOption{{Label: goingOption(len(occurrences)), Action: actionConfirm, Assignments: all}}
 	if len(occurrences) == 1 {

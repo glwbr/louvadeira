@@ -226,7 +226,7 @@ func TestTickAsksEachPersonOncePerWeekWithTheWholeWeek(t *testing.T) {
 			nextWeek = p
 		}
 	}
-	if !strings.Contains(nextWeek.text, "Domingo, 22/11, às 19h (Baixo)") {
+	if !strings.Contains(nextWeek.text, "• Domingo, 22/11, às 19h · Baixo") {
 		t.Fatalf("next week poll should list Sunday too:\n%s", nextWeek.text)
 	}
 	want := []string{"✅ Vou nos dois", "😕 Não consigo na quinta (19/11)", "😕 Não consigo no domingo (22/11)", "😕 Não consigo em nenhum"}
@@ -264,11 +264,11 @@ func TestDeclineInvitesTheOtherBassistAndTheFirstAcceptanceTakesTheSlot(t *testi
 	w.vote(poll, "😕 Não vou conseguir", false)
 
 	invite := lastPoll(t, w.fake.to(w.phone(substitute)))
-	if !strings.Contains(invite.text, absent+" não vai conseguir ir no domingo, 15/11, às 19h (Baixo)") {
+	if !strings.Contains(invite.text, "🔄 Louvor · Domingo, 15/11, às 19h · Baixo\nOi, "+substitute+"! "+absent+" não vai conseguir ir.") {
 		t.Fatalf("invite = %q", invite.text)
 	}
 	leader := w.fake.to(w.phone("Líder"))
-	if !containsText(leader, "Avisou com menos de 72h") || !containsText(leader, "Já chamei "+substitute) {
+	if !containsText(leader, "Avisou com menos de 72h") || !containsText(leader, "Chamei "+substitute) {
 		t.Fatalf("leader messages = %+v", leader)
 	}
 	if !containsText(w.fake.to(w.phone(absent)), "chamei "+substitute) {
@@ -284,7 +284,7 @@ func TestDeclineInvitesTheOtherBassistAndTheFirstAcceptanceTakesTheSlot(t *testi
 	if slot.PersonName != substitute || slot.Status != store.AssignmentConfirmed || slot.CoverOpen {
 		t.Fatalf("slot after cover = %+v", slot)
 	}
-	if !containsText(w.fake.to(group), "🔄 Mudança na escala do Louvor: @"+w.phone(substitute)+" substitui @"+w.phone(absent)) {
+	if !containsText(w.fake.to(group), "Mudança na escala do Louvor*\n@"+w.phone(substitute)+" substitui @"+w.phone(absent)) {
 		t.Fatalf("group did not get the swap: %+v", w.fake.to(group))
 	}
 	if !containsText(w.fake.to(w.phone(absent)), substitute+" vai ficar no seu lugar") {
@@ -331,7 +331,7 @@ func TestConfirmVoteConfirmsTheWholeWeek(t *testing.T) {
 			t.Fatalf("%s slot = %+v", date, slot)
 		}
 	}
-	if !containsText(w.fake.to(w.phone(bassist)), "Tá confirmado") {
+	if !containsText(w.fake.to(w.phone(bassist)), "Confirmado*") {
 		t.Fatal("no thank-you message")
 	}
 }
@@ -382,11 +382,11 @@ func TestRemindersAndPendingAlerts(t *testing.T) {
 	w.clock = time.Date(2026, 11, 14, 11, 0, 0, 0, saoPaulo)
 	w.bot.Tick(context.Background())
 	bassist := w.slotOf("2026-11-15", "Baixo").PersonName
-	if !containsText(w.fake.to(w.phone(bassist)), "Amanhã (domingo, 15/11) tem culto às 19h") ||
+	if !containsText(w.fake.to(w.phone(bassist)), "Amanhã tem culto") || !containsText(w.fake.to(w.phone(bassist)), "• Domingo, 15/11, às 19h · Baixo") ||
 		!containsText(w.fake.to(w.phone(bassist)), "Santa Ceia") {
 		t.Fatalf("reminder = %+v", w.fake.to(w.phone(bassist)))
 	}
-	if !containsText(w.fake.to(w.phone("Líder")), "⏳ Ainda falta responder sobre domingo, 15/11, às 19h") {
+	if !containsText(w.fake.to(w.phone("Líder")), "⏳ *Falta responder* sobre domingo, 15/11, às 19h") {
 		t.Fatalf("leader = %+v", w.fake.to(w.phone("Líder")))
 	}
 }
@@ -445,7 +445,7 @@ func TestChangingTheVoteBackToConfirmCancelsTheSwap(t *testing.T) {
 	if !containsText(w.fake.to(w.phone(other)), "Não precisa mais") {
 		t.Fatalf("invitee not released: %+v", w.fake.to(w.phone(other)))
 	}
-	if !containsText(w.fake.to(w.phone("Líder")), "conseguiu e vai") {
+	if !containsText(w.fake.to(w.phone("Líder")), "conseguiu ir, afinal") {
 		t.Fatalf("leader not told: %+v", w.fake.to(w.phone("Líder")))
 	}
 

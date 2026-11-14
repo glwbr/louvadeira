@@ -9,6 +9,9 @@ import (
 
 /**
  * NOTE: Every message the team reads is written here, in a warm and plain voice: no "votar", no "vaga", no orders.
+ * The first line carries what matters (it is all a phone notification shows), *bold* marks the key fact in texts
+ * (poll questions show it literally, so they stay plain), and each kind of message keeps its emoji: 🎶 schedule,
+ * ✅ confirmed, 😕 cannot, 🔄 change, ⚠️ problem, ⏳ pending, 📅 absence, 🗓️ monthly round, 🍷 Lord's Supper.
  * WhatsApp answers a poll with a hash of the chosen label and each poll keeps the labels it was sent with, so
  * rewording an option only changes polls sent afterwards.
  */
@@ -38,52 +41,77 @@ func notGoingOption(date string) string {
 	return fmt.Sprintf("😕 Não consigo %s (%s)", onWeekday(date), dayMonth(date))
 }
 
-func confirmLine(o occurrence) string {
-	return fmt.Sprintf("• %s, %s, às %s (%s)%s", capitalize(weekday(o.date)), dayMonth(o.date), hour(o.startTime),
-		joinNames(o.roles), communionMark(o.communion))
+/**
+ * NOTE: "• Domingo, 15/11, às 19h · Voz": one service per line in every list.
+ */
+func serviceBullet(date, startTime string, roles []string) string {
+	return fmt.Sprintf("• %s, %s, às %s · %s", capitalize(weekday(date)), dayMonth(date), hour(startTime), joinNames(roles))
 }
 
-func confirmQuestion(name, ministry string, lines []string) string {
-	return fmt.Sprintf("Oi, %s! 😊 Você está na escala do %s:\n%s\nConsegue ir?", firstName(name), ministry, strings.Join(lines, "\n"))
+func slotLine(d store.AssignmentDetail) string {
+	return serviceBullet(d.Date, d.StartTime, []string{d.RoleName})
+}
+
+func confirmQuestion(name, ministry string, occurrences []occurrence) string {
+	if len(occurrences) == 1 {
+		o := occurrences[0]
+		return fmt.Sprintf("🎶 %s · %s, %s, às %s · %s%s\nOi, %s! Você está na escala. Consegue ir?", ministry,
+			capitalize(weekday(o.date)), dayMonth(o.date), hour(o.startTime), joinNames(o.roles), communionMark(o.communion), firstName(name))
+	}
+	days := make([]string, len(occurrences))
+	lines := make([]string, len(occurrences))
+	for i, o := range occurrences {
+		days[i] = weekday(o.date) + ", " + dayMonth(o.date)
+		lines[i] = serviceBullet(o.date, o.startTime, o.roles) + communionMark(o.communion)
+	}
+	return fmt.Sprintf("🎶 %s · %s\nOi, %s! Você está na escala:\n%s\nConsegue ir?", ministry, capitalize(joinNames(days)),
+		firstName(name), strings.Join(lines, "\n"))
 }
 
 func confirmedReply(name string) string {
-	return fmt.Sprintf("Que bom, %s! Tá confirmado 🙌 Se surgir algum imprevisto, é só mudar sua resposta na enquete.", firstName(name))
+	return fmt.Sprintf("✅ *Confirmado*, %s! Obrigado 🙌\nSe surgir algum imprevisto, é só mudar sua resposta na enquete.", firstName(name))
 }
 
 func reminderText(d store.AssignmentDetail, roles []string) string {
-	text := fmt.Sprintf("Oi, %s! Amanhã (%s, %s) tem culto às %s e você está no %s (%s) 🎶",
-		firstName(d.PersonName), weekday(d.Date), dayMonth(d.Date), hour(d.StartTime), d.MinistryName, joinNames(roles))
+	text := fmt.Sprintf("🎶 *Amanhã tem culto, %s!*\n%s", firstName(d.PersonName), serviceBullet(d.Date, d.StartTime, roles))
 	if d.Communion {
-		text += " É dia de Santa Ceia 🍷"
+		text += "\n🍷 Dia de Santa Ceia"
 	}
 	return text + "\nSe surgir algum imprevisto, é só mudar sua resposta na enquete de confirmação."
 }
 
 func pendingAlert(d store.AssignmentDetail, names []string) string {
-	return fmt.Sprintf("⏳ Ainda falta responder sobre %s (%s): %s.", when(d), d.MinistryName, joinNames(names))
+	return fmt.Sprintf("⏳ *Falta responder* sobre %s (%s):\n%s", when(d), d.MinistryName, joinNames(names))
 }
 
-func declinedReply(name string, invited []string) string {
-	text := fmt.Sprintf("Tudo bem, %s, obrigado por avisar! 🙏 Já avisei a liderança", firstName(name))
-	if len(invited) > 0 {
-		text += " e chamei " + joinNames(invited) + " para ficar no seu lugar"
+func declinedReply(name string, invited []string, toldLeaders bool, uncovered []string) string {
+	text := fmt.Sprintf("😕 Tudo bem, %s, obrigado por avisar!", firstName(name))
+	switch {
+	case toldLeaders && len(invited) > 0:
+		text += "\nJá avisei a liderança e chamei " + joinNames(invited) + " para ficar no seu lugar."
+	case toldLeaders:
+		text += "\nJá avisei a liderança."
+	case len(invited) > 0:
+		text += "\nJá chamei " + joinNames(invited) + " para ficar no seu lugar."
 	}
-	return text + "."
+	if len(uncovered) > 0 {
+		text += "\n⚠️ Ninguém da equipe está livre para:\n" + strings.Join(uncovered, "\n") + "\nVai precisar ajustar a escala no app."
+	}
+	return text
 }
 
 func coverQuestion(candidate, absent string, d store.AssignmentDetail) string {
-	return fmt.Sprintf("Oi, %s! %s não %s conseguir ir %s, %s, às %s (%s). Você consegue substituir?",
-		firstName(candidate), absent, goVerb(absent), onWeekday(d.Date), dayMonth(d.Date), hour(d.StartTime), d.RoleName)
+	return fmt.Sprintf("🔄 %s · %s, %s, às %s · %s\nOi, %s! %s não %s conseguir ir. Você consegue substituir?", d.MinistryName,
+		capitalize(weekday(d.Date)), dayMonth(d.Date), hour(d.StartTime), d.RoleName, firstName(candidate), absent, goVerb(absent))
 }
 
 func coverManyQuestion(candidate, absent string, d store.AssignmentDetail, period string) string {
 	if period == "" {
-		return fmt.Sprintf("Oi, %s! %s não %s conseguir ir nestes cultos do %s. Em quais você consegue substituir? Pode marcar mais de um 🙂",
-			firstName(candidate), absent, goVerb(absent), d.MinistryName)
+		return fmt.Sprintf("🔄 %s · substituição\nOi, %s! %s não %s conseguir ir nestes cultos. Em quais você consegue substituir? Pode marcar mais de um 🙂",
+			d.MinistryName, firstName(candidate), absent, goVerb(absent))
 	}
-	return fmt.Sprintf("Oi, %s! %s não %s poder servir no %s %s. Em quais destes cultos você consegue substituir? Pode marcar mais de um 🙂",
-		firstName(candidate), absent, goVerb(absent), d.MinistryName, period)
+	return fmt.Sprintf("🔄 %s · %s\nOi, %s! %s não %s poder servir nesse período. Em quais destes cultos você consegue substituir? Pode marcar mais de um 🙂",
+		d.MinistryName, period, firstName(candidate), absent, goVerb(absent))
 }
 
 // NOTE: "Ana não vai", "Ana e Bia não vão".
@@ -99,58 +127,73 @@ func coverOption(label string) string {
 }
 
 func declinedAlert(d store.AssignmentDetail, late bool, invited []string) string {
-	text := fmt.Sprintf("⚠️ %s não vai conseguir ir no %s: %s.", d.PersonName, d.MinistryName, slotText(d))
+	text := fmt.Sprintf("⚠️ *%s* não vai conseguir ir no %s\n%s", d.PersonName, d.MinistryName, slotLine(d))
 	if late {
-		text += " Avisou com menos de 72h."
+		text += "\n⏰ Avisou com menos de 72h"
 	}
 	if len(invited) > 0 {
-		return text + " Já chamei " + joinNames(invited) + " para substituir."
+		return text + "\n🙋 Chamei " + joinNames(invited) + " para substituir"
 	}
-	return text + " Ninguém da equipe está livre, vai precisar da sua ajuda 🙏"
+	return text + "\n🙋 Ninguém da equipe está livre, vai precisar da sua ajuda"
 }
 
 func declinedManyHeader(d store.AssignmentDetail, why absence) string {
-	header := fmt.Sprintf("⚠️ %s não vai conseguir ir nestes cultos do %s", d.PersonName, d.MinistryName)
+	header := fmt.Sprintf("⚠️ *%s* não vai conseguir ir nestes cultos do %s", d.PersonName, d.MinistryName)
 	if why.period != "" {
-		header = fmt.Sprintf("⚠️ %s não vai poder servir no %s %s", d.PersonName, d.MinistryName, why.period)
+		header = fmt.Sprintf("⚠️ *%s* não vai poder servir no %s %s", d.PersonName, d.MinistryName, why.period)
 	}
 	if why.reason != "" {
 		header += " (" + why.reason + ")"
 	}
-	return header + ":"
+	return header
 }
 
 func declinedManyLine(d store.AssignmentDetail, late bool, invited []string) string {
-	line := "• " + slotText(d)
+	line := slotLine(d)
 	if len(invited) > 0 {
-		line += " — chamei " + joinNames(invited)
+		line += ": chamei " + joinNames(invited)
 	} else {
-		line += " — ninguém livre, vai precisar da sua ajuda"
+		line += ": ninguém livre, vai precisar da sua ajuda"
 	}
 	if late {
-		line += " ⏰ menos de 72h"
+		line += " ⏰"
 	}
 	return line
+}
+
+func serviceHeaderLine(d store.AssignmentDetail, late bool) string {
+	line := fmt.Sprintf("• %s, %s, às %s", capitalize(weekday(d.Date)), dayMonth(d.Date), hour(d.StartTime))
+	if late {
+		line += " ⏰"
+	}
+	return line
+}
+
+func roleSubLine(role string, invited []string) string {
+	if len(invited) > 0 {
+		return "   ◦ " + role + ": chamei " + joinNames(invited)
+	}
+	return "   ◦ " + role + ": ninguém livre, vai precisar da sua ajuda"
 }
 
 func blockedNote(names []string) string {
 	return "\n(Modo de teste: não chamei " + joinNames(names) + ".)"
 }
 
-func coveredReply(name string, slots []string) string {
-	return fmt.Sprintf("Combinado, %s! 🙏 Você está na escala: %s.", firstName(name), joinNames(slots))
+func coveredReply(name string, lines []string) string {
+	return fmt.Sprintf("✅ *Combinado*, %s! Obrigado 🙏\nVocê está na escala:\n%s", firstName(name), strings.Join(lines, "\n"))
 }
 
-func replacedNotice(absent, substitute string, slots []string) string {
-	return fmt.Sprintf("Boa notícia, %s! %s vai ficar no seu lugar: %s 🙌", firstName(absent), substitute, joinNames(slots))
+func replacedNotice(absent, substitute string, lines []string) string {
+	return fmt.Sprintf("🔄 *Boa notícia*, %s! %s vai ficar no seu lugar:\n%s", firstName(absent), substitute, strings.Join(lines, "\n"))
 }
 
-func swapAnnouncement(ministry, substitute, absent string, slots []string) string {
-	return fmt.Sprintf("🔄 Mudança na escala do %s: %s substitui %s — %s.", ministry, substitute, absent, joinNames(slots))
+func swapAnnouncement(ministry, substitute, absent string, lines []string) string {
+	return fmt.Sprintf("🔄 *Mudança na escala do %s*\n%s substitui %s\n%s", ministry, substitute, absent, strings.Join(lines, "\n"))
 }
 
-func alreadyTakenReply(name, substitute string, slots []string) string {
-	return fmt.Sprintf("Obrigado pela disposição, %s! 🙏 %s já ficou com %s.", firstName(name), substitute, joinNames(slots))
+func alreadyTakenReply(name, substitute string, lines []string) string {
+	return fmt.Sprintf("Obrigado pela disposição, %s! 🙏 %s já vai substituir:\n%s", firstName(name), substitute, strings.Join(lines, "\n"))
 }
 
 func goneReply(all bool, slots []string) string {
@@ -171,8 +214,8 @@ func refusedReply() string {
 	return "Tudo bem, obrigado por responder! 🙏"
 }
 
-func uncoveredAlert(d store.AssignmentDetail, absent string, slots []string) string {
-	return fmt.Sprintf("❗ Ninguém conseguiu substituir %s no %s: %s. Vai precisar da sua ajuda nessa 🙏", absent, d.MinistryName, joinNames(slots))
+func uncoveredAlert(d store.AssignmentDetail, absent string, lines []string) string {
+	return fmt.Sprintf("❗ *Ninguém conseguiu substituir %s* no %s\n%s\nVai precisar da sua ajuda nessa 🙏", absent, d.MinistryName, strings.Join(lines, "\n"))
 }
 
 func comebackTakenReply(d store.AssignmentDetail) string {
@@ -184,11 +227,11 @@ func comebackReleased(name, returning string, d store.AssignmentDetail) string {
 }
 
 func comebackAlert(returning string, d store.AssignmentDetail) string {
-	return fmt.Sprintf("↩️ %s conseguiu e vai, afinal: %s, %s.", returning, slotText(d), d.MinistryName)
+	return fmt.Sprintf("↩️ *%s* conseguiu ir, afinal (%s)\n%s", returning, d.MinistryName, slotLine(d))
 }
 
 func loginLinkText(name, link string) string {
-	return fmt.Sprintf("Oi, %s! Aqui está seu link para ver suas escalas e avisar quando não puder ir:\n%s\nEle funciona uma vez e vale por 1 hora. Depois de entrar, o celular fica conectado.", firstName(name), link)
+	return fmt.Sprintf("🔑 Oi, %s! Aqui está seu link para ver suas escalas e avisar quando não puder ir:\n%s\nEle funciona uma vez e vale por 1 hora. Depois de entrar, o celular fica conectado.", firstName(name), link)
 }
 
 const (
@@ -200,33 +243,33 @@ const (
 )
 
 func helpText(name string) string {
-	return fmt.Sprintf("Oi, %s! Eu sou o assistente das escalas 🎶 Você pode me mandar:\n"+
-		"• *escala* para ver quando você está na escala\n"+
-		"• *não posso dia 19* para avisar que não vai conseguir ir num culto\n"+
-		"• *não posso de 10/12 a 20/12* para avisar que vai ficar fora um tempo\n"+
+	return fmt.Sprintf("🎶 *Assistente das escalas*\nOi, %s! Você pode me mandar:\n"+
+		"• *escala*: para ver quando você está na escala\n"+
+		"• *não posso dia 19*: para avisar que não vai conseguir ir num culto\n"+
+		"• *não posso de 10/12 a 20/12*: para avisar que vai ficar fora um tempo\n"+
 		"Para confirmar presença, é só responder as enquetes que eu mando 🙂", firstName(name))
 }
 
-func scheduleText(name string, lines []string) string {
-	return fmt.Sprintf("Oi, %s! Suas próximas escalas 🎶\n%s\nSe não puder ir em algum, é só me mandar *não posso* e o dia 🙂",
-		firstName(name), strings.Join(lines, "\n"))
+func scheduleText(lines []string) string {
+	return "🎶 *Suas próximas escalas*\n" + strings.Join(lines, "\n") + "\nSe não puder ir em algum, é só me mandar *não posso* e o dia 🙂"
 }
 
 func noScheduleText(name string) string {
-	return fmt.Sprintf("Oi, %s! Você não está em nenhuma escala publicada nos próximos dias 🙂", firstName(name))
+	return fmt.Sprintf("🎶 Oi, %s! Você não está em nenhuma escala publicada nos próximos dias 🙂", firstName(name))
 }
 
 func singleServiceQuestion(name string, s memberService) string {
-	return fmt.Sprintf("Oi, %s! Você está na escala %s, %s, às %s (%s). Não vai conseguir ir?",
-		firstName(name), onWeekday(s.date), dayMonth(s.date), hour(s.startTime), joinNames(s.roles))
+	return fmt.Sprintf("😕 %s · %s, %s, às %s · %s\nOi, %s! Você não vai conseguir ir?", s.ministry,
+		capitalize(weekday(s.date)), dayMonth(s.date), hour(s.startTime), joinNames(s.roles), firstName(name))
 }
 
 func whichServiceQuestion(name string) string {
-	return fmt.Sprintf("Oi, %s! Em qual culto você não vai conseguir ir? Pode marcar mais de um.", firstName(name))
+	return fmt.Sprintf("😕 Oi, %s! Em qual culto você não vai conseguir ir? Pode marcar mais de um.", firstName(name))
 }
 
 func absenceQuestion(name, period string, lines []string) string {
-	text := fmt.Sprintf("Só para confirmar, %s: você não vai poder %s? Assim a gente não coloca você na escala nesses dias.", firstName(name), period)
+	text := fmt.Sprintf("📅 Ausência %s\nSó para confirmar, %s: você não vai poder %s? Assim a gente não coloca você na escala nesses dias.",
+		period, firstName(name), period)
 	if len(lines) > 0 {
 		text += "\nVocê está na escala em:\n" + strings.Join(lines, "\n") + "\nSe confirmar, eu já chamo alguém para ficar no seu lugar."
 	}
@@ -234,7 +277,7 @@ func absenceQuestion(name, period string, lines []string) string {
 }
 
 func absenceDaysQuestion(name string, lines []string) string {
-	text := fmt.Sprintf("Só para confirmar, %s: em quais destes dias você não vai poder? Marque só os que estiverem certos 🙂", firstName(name))
+	text := fmt.Sprintf("📅 Ausência\nSó para confirmar, %s: em quais destes dias você não vai poder? Marque só os que estiverem certos 🙂", firstName(name))
 	if len(lines) > 0 {
 		text += "\nVocê está na escala em:\n" + strings.Join(lines, "\n")
 	}
@@ -242,11 +285,11 @@ func absenceDaysQuestion(name string, lines []string) string {
 }
 
 func absenceNotedReply(name, period string) string {
-	return fmt.Sprintf("Anotado, %s! A gente não coloca você na escala %s 🙏", firstName(name), period)
+	return fmt.Sprintf("📅 *Anotado*, %s! A gente não coloca você na escala %s 🙏", firstName(name), period)
 }
 
 func absenceNotedAlert(name, period string) string {
-	return fmt.Sprintf("📅 %s avisou que não vai poder %s.", name, period)
+	return fmt.Sprintf("📅 *%s* avisou que não vai poder %s.", name, period)
 }
 
 func keptReply() string {
@@ -264,36 +307,36 @@ const (
 )
 
 func availabilityQuestion(name, ministry, month string) string {
-	return fmt.Sprintf("Oi, %s! Vamos montar a escala de %s do %s 🎶 Em quais destes cultos você *não* vai poder? Pode marcar mais de um. Se puder em todos, marque a última opção.",
-		firstName(name), monthName(month), ministry)
+	return fmt.Sprintf("🗓️ Escala de %s · %s\nOi, %s! Em quais destes cultos você não vai poder? Pode marcar mais de um. Se puder em todos, marque a última opção.",
+		monthName(month), ministry, firstName(name))
 }
 
 func availabilityReply(name string, days []string) string {
 	if len(days) == 0 {
-		return fmt.Sprintf("Anotado, %s! Você pode em todos 🙌", firstName(name))
+		return fmt.Sprintf("🗓️ *Anotado*, %s! Você pode em todos 🙌", firstName(name))
 	}
-	return fmt.Sprintf("Anotado, %s! Você não pode: %s. Se mudar algo, é só trocar a resposta 🙂", firstName(name), joinNames(days))
+	return fmt.Sprintf("🗓️ *Anotado*, %s! Você não pode: %s.\nSe mudar algo, é só trocar a resposta 🙂", firstName(name), joinNames(days))
 }
 
 func availabilityReminder(name, month string) string {
-	return fmt.Sprintf("Oi, %s! Ainda falta você responder a enquete da escala de %s 🙂 É só marcar os cultos em que não vai poder, ou \"Posso em todos\", na enquete que eu mandei.",
+	return fmt.Sprintf("🗓️ Oi, %s! Ainda falta você responder a enquete da escala de %s 🙂 É só marcar os cultos em que não vai poder, ou \"Posso em todos\", na enquete que eu mandei.",
 		firstName(name), monthName(month))
 }
 
 func draftProposal(ministry, month, summary string, answered, asked, warnings int) string {
-	text := fmt.Sprintf("Montei a escala de %s do %s com as respostas da enquete (%d de %d responderam) 🎶", monthName(month), ministry, answered, asked)
+	text := fmt.Sprintf("🗓️ *Escala de %s do %s pronta*\n%d de %d responderam a enquete.", monthName(month), ministry, answered, asked)
 	if warnings > 0 {
-		text += fmt.Sprintf(" Atenção: %d %s para revisar.", warnings, plural(warnings, "ponto", "pontos"))
+		text += fmt.Sprintf("\n⚠️ %d %s para revisar.", warnings, plural(warnings, "ponto", "pontos"))
 	}
 	return text + "\n\n" + summary
 }
 
 func approvalQuestion(month string) string {
-	return fmt.Sprintf("Posso publicar a escala de %s no grupo?", monthName(month))
+	return fmt.Sprintf("🗓️ Posso publicar a escala de %s no grupo?", monthName(month))
 }
 
 func publishedReply(month string) string {
-	return fmt.Sprintf("Publicada! 🎉 Já mandei a escala de %s no grupo.", monthName(month))
+	return fmt.Sprintf("🎉 *Publicada!* Já mandei a escala de %s no grupo.", monthName(month))
 }
 
 func alreadyPublishedReply(month string) string {
@@ -305,7 +348,7 @@ func editReply() string {
 }
 
 func draftFailedAlert(ministry, month string, err error) string {
-	return fmt.Sprintf("Não consegui montar a escala de %s do %s: %s.", monthName(month), ministry, err)
+	return fmt.Sprintf("⚠️ Não consegui montar a escala de %s do %s: %s.", monthName(month), ministry, err)
 }
 
 func plural(n int, one, many string) string {

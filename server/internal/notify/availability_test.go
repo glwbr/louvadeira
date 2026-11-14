@@ -10,7 +10,7 @@ import (
 func availabilityPoll(t *testing.T, w *world, name string) message {
 	t.Helper()
 	for _, m := range w.fake.to(w.phone(name)) {
-		if m.options != nil && strings.Contains(m.text, "escala de dezembro do Louvor") {
+		if m.options != nil && strings.Contains(m.text, "Escala de dezembro · Louvor") {
 			return m
 		}
 	}
@@ -23,7 +23,7 @@ func TestMonthlyRoundAsksRemindsAndProposesTheSchedule(t *testing.T) {
 	ctx := context.Background()
 	w.clock = time.Date(2026, 11, 19, 12, 0, 0, 0, saoPaulo)
 	w.bot.Tick(ctx)
-	if containsText(w.fake.sent, "escala de dezembro") {
+	if containsText(w.fake.sent, "Escala de dezembro") {
 		t.Fatal("asked before day 20")
 	}
 
@@ -77,7 +77,7 @@ func TestMonthlyRoundAsksRemindsAndProposesTheSchedule(t *testing.T) {
 		}
 	}
 	leader := w.fake.to(w.phone("Líder"))
-	if !containsText(leader, "Montei a escala de dezembro do Louvor com as respostas da enquete (2 de 8 responderam)") {
+	if !containsText(leader, "Escala de dezembro do Louvor pronta*\n2 de 8 responderam a enquete") {
 		t.Fatalf("leader = %+v", leader)
 	}
 	approval := lastPoll(t, leader)
@@ -98,7 +98,7 @@ func TestMonthlyRoundAsksRemindsAndProposesTheSchedule(t *testing.T) {
 	w.fake.reset()
 	w.clock = time.Date(2026, 11, 23, 15, 0, 0, 0, saoPaulo)
 	w.bot.Tick(ctx)
-	if containsText(w.fake.sent, "Montei a escala") || containsText(w.fake.sent, "escala de dezembro do Louvor") {
+	if containsText(w.fake.sent, "pronta*") || containsText(w.fake.sent, "Escala de dezembro · Louvor") {
 		t.Fatalf("the round ran again after publishing: %+v", w.fake.sent)
 	}
 }

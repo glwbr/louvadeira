@@ -99,9 +99,9 @@ func (b *Bot) decline(ctx context.Context, assignmentIDs []int64, byMember bool,
 				_ = b.Store.CloseCoverRequest(ctx, s.request, b.now())
 			}
 		}
-		b.alertDeclined(ctx, swaps, why)
+		told := b.alertDeclined(ctx, swaps, why)
 		if byMember {
-			b.thankAbsent(ctx, swaps)
+			b.thankAbsent(ctx, swaps, told)
 		}
 	})
 
@@ -338,7 +338,12 @@ func offerLabels(offers []offer) []string {
 	return labels
 }
 
-func (b *Bot) alertDeclined(ctx context.Context, swaps []*swap, why absence) {
+/**
+ * NOTE: One message per ministry; with several places, one line per service and, when a service has more than one
+ * role open, one line per role under it. Reports whether any leader was told.
+ */
+func (b *Bot) alertDeclined(ctx context.Context, swaps []*swap, why absence) bool {
+	told := false
 	ministries, byMinistry := groupBy(swaps, func(s *swap) int64 { return s.detail.MinistryID })
 	for _, ministry := range ministries {
 		list := byMinistry[ministry]
@@ -357,29 +362,62 @@ func (b *Bot) alertDeclined(ctx context.Context, swaps []*swap, why absence) {
 			alert = declinedAlert(first, list[0].late, list[0].invited)
 		} else {
 			lines := []string{declinedManyHeader(first, why)}
-			for _, s := range list {
-				lines = append(lines, declinedManyLine(s.detail, s.late, s.invited))
+			services, byService := groupBy(list, func(s *swap) string { return s.detail.Date + "#" + s.detail.StartTime })
+			for _, key := range services {
+				group := byService[key]
+				if len(group) == 1 {
+					lines = append(lines, declinedManyLine(group[0].detail, group[0].late, group[0].invited))
+					continue
+				}
+				lines = append(lines, serviceHeaderLine(group[0].detail, group[0].late))
+				for _, s := range group {
+					lines = append(lines, roleSubLine(s.detail.RoleName, s.invited))
+				}
 			}
 			alert = strings.Join(lines, "\n")
 		}
 		if len(blocked) > 0 {
 			alert += blockedNote(blocked)
 		}
-		b.tellLeaders(ctx, ministry, alert, first.PersonID)
+		told = b.tellLeaders(ctx, ministry, alert, first.PersonID) > 0 || told
 	}
+	return told
 }
 
-func (b *Bot) thankAbsent(ctx context.Context, swaps []*swap) {
+/**
+ * NOTE: A leader who is away is not told about their own absence, so when nobody could be invited for one of their
+ * places, the reply to them carries it instead.
+ */
+func (b *Bot) thankAbsent(ctx context.Context, swaps []*swap, told bool) {
 	first := swaps[0].detail
-	var invited []string
+	var invited, uncovered []string
 	for _, s := range swaps {
 		for _, name := range s.invited {
 			if !contains(invited, name) {
 				invited = append(invited, name)
 			}
 		}
+		if len(s.invited) == 0 {
+			uncovered = append(uncovered, slotLine(s.detail))
+		}
 	}
-	b.send(ctx, first.Phone, declinedReply(first.PersonName, invited))
+	if len(uncovered) > 0 && !b.isLeader(ctx, first.MinistryID, first.PersonID) {
+		uncovered = nil
+	}
+	b.send(ctx, first.Phone, declinedReply(first.PersonName, invited, told, uncovered))
+}
+
+func (b *Bot) isLeader(ctx context.Context, ministryID, personID int64) bool {
+	leaders, err := b.Store.Leaders(ctx, ministryID)
+	if err != nil {
+		return false
+	}
+	for _, leader := range leaders {
+		if leader.ID == personID {
+			return true
+		}
+	}
+	return false
 }
 
 /**
@@ -476,7 +514,7 @@ func (b *Bot) acceptCovers(ctx context.Context, substitute store.Person, groups 
 		return
 	}
 
-	b.send(ctx, substitute.Phone, coveredReply(substitute.Name, slotTexts(won)))
+	b.send(ctx, substitute.Phone, coveredReply(substitute.Name, slotLines(won)))
 
 	type handover struct{ ministry, absent int64 }
 	handovers, byHandover := groupBy(won, func(r store.CoverResult) handover {
@@ -485,10 +523,10 @@ func (b *Bot) acceptCovers(ctx context.Context, substitute store.Person, groups 
 	for _, k := range handovers {
 		list := byHandover[k]
 		absent, d := list[0].Absent, list[0].Assignment
-		b.send(ctx, absent.Phone, replacedNotice(absent.Name, substitute.Name, slotTexts(list)))
-		b.tellLeaders(ctx, d.MinistryID, swapAnnouncement(d.MinistryName, substitute.Name, absent.Name, slotTexts(list)), absent.ID, substitute.ID)
+		b.send(ctx, absent.Phone, replacedNotice(absent.Name, substitute.Name, slotLines(list)))
+		b.tellLeaders(ctx, d.MinistryID, swapAnnouncement(d.MinistryName, substitute.Name, absent.Name, slotLines(list)), absent.ID, substitute.ID)
 		if d.WhatsAppGroup != "" {
-			text := swapAnnouncement(d.MinistryName, mentionOf(substitute), mentionOf(absent), slotTexts(list))
+			text := swapAnnouncement(d.MinistryName, mentionOf(substitute), mentionOf(absent), slotLines(list))
 			b.mention(ctx, d.WhatsAppGroup, text, substitute, absent)
 		}
 	}
@@ -504,7 +542,7 @@ func (b *Bot) acceptCovers(ctx context.Context, substitute store.Person, groups 
 		}
 	}
 	for _, p := range waiting {
-		b.send(ctx, p.Phone, alreadyTakenReply(p.Name, substitute.Name, slotTexts(released[p.ID])))
+		b.send(ctx, p.Phone, alreadyTakenReply(p.Name, substitute.Name, slotLines(released[p.ID])))
 	}
 }
 
@@ -537,8 +575,16 @@ func (b *Bot) refuseCovers(ctx context.Context, person store.Person, requestIDs 
 	gaps, byGap := groupBy(uncovered, func(r store.CoverResult) gap { return gap{r.Assignment.MinistryID, r.Absent.ID} })
 	for _, k := range gaps {
 		list := byGap[k]
-		b.tellLeaders(ctx, k.ministry, uncoveredAlert(list[0].Assignment, list[0].Absent.Name, slotTexts(list)), k.absent)
+		b.tellLeaders(ctx, k.ministry, uncoveredAlert(list[0].Assignment, list[0].Absent.Name, slotLines(list)), k.absent)
 	}
+}
+
+func slotLines(results []store.CoverResult) []string {
+	lines := make([]string, len(results))
+	for i, r := range results {
+		lines[i] = slotLine(r.Assignment)
+	}
+	return lines
 }
 
 func slotTexts(results []store.CoverResult) []string {

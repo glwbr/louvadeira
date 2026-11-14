@@ -37,8 +37,8 @@ func TestDecliningTheWholeWeekSendsOneInviteWithBothServices(t *testing.T) {
 		t.Fatalf("invite multiple=%v options=%v", invite.multiple, invite.options)
 	}
 	leader := w.fake.to(w.phone("Líder"))
-	if len(leader) != 1 || !strings.Contains(leader[0].text, "• quinta, 19/11, às 19h30 (Baixo) — chamei "+other) ||
-		!strings.Contains(leader[0].text, "• domingo, 22/11, às 19h (Baixo) — chamei "+other) {
+	if len(leader) != 1 || !strings.Contains(leader[0].text, "• Quinta, 19/11, às 19h30 · Baixo: chamei "+other) ||
+		!strings.Contains(leader[0].text, "• Domingo, 22/11, às 19h · Baixo: chamei "+other) {
 		t.Fatalf("leader messages = %+v", leader)
 	}
 
@@ -49,11 +49,11 @@ func TestDecliningTheWholeWeekSendsOneInviteWithBothServices(t *testing.T) {
 			t.Fatalf("%s slot = %+v", date, slot)
 		}
 	}
-	both := "quinta, 19/11, às 19h30 (Baixo) e domingo, 22/11, às 19h (Baixo)"
-	if absent := w.fake.to(w.phone(bassist)); len(absent) != 1 || !strings.Contains(absent[0].text, other+" vai ficar no seu lugar: "+both) {
+	both := "• Quinta, 19/11, às 19h30 · Baixo\n• Domingo, 22/11, às 19h · Baixo"
+	if absent := w.fake.to(w.phone(bassist)); len(absent) != 1 || !strings.Contains(absent[0].text, other+" vai ficar no seu lugar:\n"+both) {
 		t.Fatalf("absent messages = %+v", absent)
 	}
-	if swaps := w.fake.to(group); len(swaps) != 1 || !strings.Contains(swaps[0].text, "@"+w.phone(other)+" substitui @"+w.phone(bassist)+" — "+both) {
+	if swaps := w.fake.to(group); len(swaps) != 1 || !strings.Contains(swaps[0].text, "@"+w.phone(other)+" substitui @"+w.phone(bassist)+"\n"+both) {
 		t.Fatalf("group messages = %+v", swaps)
 	}
 }
@@ -74,7 +74,7 @@ func TestAnUntickedServiceCountsAsCannot(t *testing.T) {
 	if slot := w.slotOf("2026-11-22", "Baixo"); slot.PersonName != bassist || slot.CoverOpen {
 		t.Fatalf("sunday = %+v", slot)
 	}
-	if !containsText(w.fake.to(w.phone("Líder")), "Ninguém conseguiu substituir "+bassist+" no Louvor: domingo, 22/11, às 19h (Baixo)") {
+	if !containsText(w.fake.to(w.phone("Líder")), "Ninguém conseguiu substituir "+bassist+"* no Louvor\n• Domingo, 22/11, às 19h · Baixo") {
 		t.Fatalf("leader = %+v", w.fake.to(w.phone("Líder")))
 	}
 
@@ -122,7 +122,7 @@ func TestAbsenceOpensSwapsForEveryServiceInThePeriod(t *testing.T) {
 			continue
 		}
 		invited[m.to]++
-		if !strings.Contains(m.text, singer.Name+" não vai poder servir no Louvor de 14/11 a 30/11") || strings.Contains(m.text, "saúde") {
+		if !strings.Contains(m.text, "🔄 Louvor · de 14/11 a 30/11") || !strings.Contains(m.text, singer.Name+" não vai poder servir nesse período") || strings.Contains(m.text, "saúde") {
 			t.Fatalf("invite = %q", m.text)
 		}
 	}
@@ -132,7 +132,7 @@ func TestAbsenceOpensSwapsForEveryServiceInThePeriod(t *testing.T) {
 		}
 	}
 	leader := w.fake.to(w.phone("Líder"))
-	if len(leader) != 1 || !strings.Contains(leader[0].text, "de 14/11 a 30/11 (saúde):") || strings.Count(leader[0].text, "\n• ") != len(held) {
+	if len(leader) != 1 || !strings.Contains(leader[0].text, "de 14/11 a 30/11 (saúde)") || strings.Count(leader[0].text, "\n• ") != len(held) {
 		t.Fatalf("leader = %+v", leader)
 	}
 	if left, _ := w.bot.AffectedBy(ctx, absence); len(left) != 0 {
@@ -173,7 +173,7 @@ func TestRepeatingAbsenceOnlyCountsMatchingDays(t *testing.T) {
 	if invites := polls(w.fake.to(w.phone(other))); len(invites) != 0 {
 		t.Fatalf("%s cannot do Thursdays either but was invited: %+v", other, invites)
 	}
-	if leader := w.fake.to(w.phone("Líder")); len(leader) != 1 || !strings.Contains(leader[0].text, bassist+" não vai poder servir no Louvor às quintas") ||
+	if leader := w.fake.to(w.phone("Líder")); len(leader) != 1 || !strings.Contains(leader[0].text, bassist+"* não vai poder servir no Louvor às quintas") ||
 		!strings.Contains(leader[0].text, "ninguém livre") {
 		t.Fatalf("leader = %+v", leader)
 	}

@@ -219,7 +219,7 @@ func (s *Store) SavePoll(ctx context.Context, poll Poll, now time.Time) error {
 func (s *Store) PersonCoverPolls(ctx context.Context, personID int64) ([]Poll, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT message_id, kind, person_id, options FROM polls
-		WHERE person_id = ? AND kind = 'cover' ORDER BY created_at DESC LIMIT 20`, personID)
+		WHERE person_id = ? AND kind = 'cover' ORDER BY created_at DESC, rowid DESC LIMIT 20`, personID)
 	if err != nil {
 		return nil, err
 	}

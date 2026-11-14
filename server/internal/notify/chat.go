@@ -14,7 +14,7 @@ import (
 const (
 	actionAbsence = "absence"
 	actionKeep    = "keep"
-	chatAhead     = 60 * 24 * time.Hour
+	chatAhead     = 28 * 24 * time.Hour
 )
 
 /**
@@ -67,7 +67,11 @@ func (s memberService) open() []int64 {
 	return ids
 }
 
-func (s memberService) state() string {
+/**
+ * NOTE: "falta confirmar" only shows inside the week the confirmation is asked for; further services carry no
+ * status, since nobody was asked about them yet.
+ */
+func (s memberService) state(asking bool) string {
 	declined, confirmed, searching := true, true, false
 	for _, slot := range s.slots {
 		declined = declined && slot.Status == store.AssignmentDeclined
@@ -76,13 +80,15 @@ func (s memberService) state() string {
 	}
 	switch {
 	case declined && searching:
-		return " · procurando substituto 🔄"
+		return " · 🔄 procurando substituto"
 	case declined:
-		return " · você avisou que não vai"
+		return " · 😕 você avisou que não vai"
 	case confirmed:
 		return " ✅"
+	case asking:
+		return " · ⏳ falta confirmar"
 	}
-	return " · falta confirmar"
+	return ""
 }
 
 func (b *Bot) memberServices(ctx context.Context, person store.Person, from, to string) ([]memberService, error) {
@@ -110,7 +116,7 @@ func (b *Bot) memberServices(ctx context.Context, person store.Person, from, to 
 }
 
 func serviceLine(s memberService, withMinistry bool) string {
-	line := fmt.Sprintf("• %s, %s, às %s — %s", capitalize(weekday(s.date)), dayMonth(s.date), hour(s.startTime), joinNames(s.roles))
+	line := serviceBullet(s.date, s.startTime, s.roles)
 	if withMinistry {
 		line += " (" + s.ministry + ")"
 	}
@@ -142,9 +148,10 @@ func (b *Bot) sendSchedule(ctx context.Context, person store.Person) {
 	}
 	lines := make([]string, len(services))
 	for i, s := range services {
-		lines[i] = serviceLine(s, manyMinistries(services)) + s.state()
+		asking := b.serviceTime(store.AssignmentDetail{Date: s.date, StartTime: s.startTime}).Sub(b.now()) <= confirmAhead
+		lines[i] = serviceLine(s, manyMinistries(services)) + s.state(asking)
 	}
-	b.send(ctx, person.Phone, scheduleText(person.Name, lines))
+	b.send(ctx, person.Phone, scheduleText(lines))
 }
 
 func (b *Bot) askWhichService(ctx context.Context, person store.Person) {
