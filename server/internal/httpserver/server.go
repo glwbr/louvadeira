@@ -36,6 +36,8 @@ type Deps struct {
 	Messenger    messenger.Messenger
 	Bot          *notify.Bot
 	AdminToken   string
+	// NOTE: PublicURL is where members open the app; access links sent on WhatsApp point there.
+	PublicURL string
 }
 
 type healthResponse struct {
@@ -59,6 +61,19 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/auth/redeem", d.redeem)
 	mux.HandleFunc("POST /api/auth/logout", d.logout)
 	mux.Handle("GET /api/me", d.signedIn(http.HandlerFunc(d.me)))
+	mux.HandleFunc("POST /api/auth/link", d.requestLink)
+
+	member := func(pattern string, handler http.HandlerFunc) {
+		mux.Handle(pattern, d.signedIn(handler))
+	}
+	member("GET /api/me/assignments", d.mySlots)
+	member("POST /api/me/confirm", d.confirmMine)
+	member("POST /api/me/decline", d.declineMine)
+	member("GET /api/me/unavailabilities", d.myAbsences)
+	member("POST /api/me/unavailabilities", d.createMyAbsence)
+	member("DELETE /api/me/unavailabilities/{id}", d.deleteMyAbsence)
+	member("GET /api/me/unavailabilities/{id}/assignments", d.myAbsenceSlots)
+	member("POST /api/me/unavailabilities/{id}/covers", d.openMyCovers)
 
 	admin := func(pattern string, handler http.HandlerFunc) {
 		mux.Handle(pattern, d.admin(handler))
@@ -67,6 +82,7 @@ func New(d Deps) http.Handler {
 	admin("POST /api/people", d.createPerson)
 	admin("PUT /api/people/{id}", d.updatePerson)
 	admin("DELETE /api/people/{id}", d.archivePerson)
+	admin("POST /api/people/{id}/link", d.sendPersonLink)
 
 	admin("GET /api/services", d.listServices)
 	admin("POST /api/services", d.createService)

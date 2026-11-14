@@ -38,9 +38,13 @@ func (f fakeWhatsApp) GroupParticipants(context.Context, messenger.Address) ([]w
 	return []whatsapp.Participant{{Phone: "5511988887777", Name: "Ana"}}, nil
 }
 
-type fakeMessenger struct{ polls []messenger.Address }
+type fakeMessenger struct {
+	polls []messenger.Address
+	texts []string
+}
 
-func (f *fakeMessenger) SendText(context.Context, messenger.Address, string) (messenger.MessageID, error) {
+func (f *fakeMessenger) SendText(_ context.Context, _ messenger.Address, text string) (messenger.MessageID, error) {
+	f.texts = append(f.texts, text)
 	return "", nil
 }
 
@@ -88,6 +92,7 @@ func newHarness(t *testing.T) *harness {
 		Messenger:    h.polls,
 		Bot:          &notify.Bot{Store: h.store, Messenger: h.polls, Log: logger, Now: func() time.Time { return now }},
 		AdminToken:   "segredo",
+		PublicURL:    "https://louvadeira.test",
 	})
 	return h
 }

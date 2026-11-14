@@ -174,3 +174,7 @@ func comebackReleased(name, returning string, d store.AssignmentDetail) string {
 func comebackAlert(returning string, d store.AssignmentDetail) string {
 	return fmt.Sprintf("↩️ %s conseguiu e vai, afinal: %s, %s.", returning, slotText(d), d.MinistryName)
 }
+
+func loginLinkText(name, link string) string {
+	return fmt.Sprintf("Oi, %s! Aqui está seu link para ver suas escalas e avisar quando não puder ir:\n%s\nEle funciona uma vez e vale por 1 hora. Depois de entrar, o celular fica conectado.", firstName(name), link)
+}

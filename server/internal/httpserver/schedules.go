@@ -205,6 +205,10 @@ func (d Deps) unavailabilityAssignments(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+	d.writeAffected(w, r, u)
+}
+
+func (d Deps) writeAffected(w http.ResponseWriter, r *http.Request, u store.Unavailability) {
 	slots, err := d.Bot.AffectedBy(r.Context(), u)
 	list := make([]affectedSlot, len(slots))
 	for i, s := range slots {

@@ -83,6 +83,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Bot:          bot,
 		WhatsAppMode: string(cfg.WhatsAppMode),
 		AdminToken:   cfg.AdminToken,
+		PublicURL:    cfg.PublicURL,
 	}
 	if cfg.WhatsAppMode != config.WhatsAppOff {
 		wa, err := whatsapp.Open(ctx, cfg.WhatsAppDBPath(), log)

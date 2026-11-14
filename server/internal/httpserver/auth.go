@@ -13,7 +13,7 @@ import (
 
 const (
 	sessionCookie = "lv_session"
-	SessionTTL    = 30 * 24 * time.Hour
+	SessionTTL    = 90 * 24 * time.Hour
 )
 
 type personKey struct{}

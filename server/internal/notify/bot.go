@@ -439,7 +439,7 @@ func (b *Bot) applyVote(ctx context.Context, vote messenger.Vote) {
 	option := chosen[len(chosen)-1]
 	switch option.Action {
 	case actionConfirm:
-		b.confirm(ctx, person, option.Assignments)
+		b.confirm(ctx, person, option.Assignments, true)
 	case actionDecline:
 		var ids []int64
 		for _, id := range option.Assignments {
@@ -458,7 +458,7 @@ func (b *Bot) applyVote(ctx context.Context, vote messenger.Vote) {
 	}
 }
 
-func (b *Bot) confirm(ctx context.Context, person store.Person, assignments []int64) {
+func (b *Bot) confirm(ctx context.Context, person store.Person, assignments []int64, reply bool) {
 	changed, err := b.Store.SetAssignmentsStatus(ctx, person.ID, assignments, store.AssignmentConfirmed, b.now())
 	if err != nil {
 		b.Log.Error("confirmar presença", "erro", err)
@@ -487,7 +487,7 @@ func (b *Bot) confirm(ctx context.Context, person store.Person, assignments []in
 		}
 		b.tellLeaders(ctx, d.MinistryID, comebackAlert(person.Name, d))
 	}
-	if confirmed {
+	if confirmed && reply {
 		b.send(ctx, person.Phone, confirmedReply(person.Name))
 	}
 }
