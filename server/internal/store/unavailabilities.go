@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"slices"
 	"time"
 )
 
@@ -215,10 +216,38 @@ func (s *Store) Unavailability(ctx context.Context, id int64) (Unavailability, e
 }
 
 /**
- * NOTE: Replaces the days a person marked in one availability poll with the ones in their latest answer.
+ * NOTE: Replaces the days a person marked in one availability poll with the ones in their latest answer, and reports
+ * whether anything changed, so the same answer arriving twice is acknowledged once.
  */
-func (s *Store) ReplacePollAbsences(ctx context.Context, personID int64, source string, days []string) error {
-	return s.inTx(ctx, func(tx *sql.Tx) error {
+func (s *Store) ReplacePollAbsences(ctx context.Context, personID int64, source string, days []string) (bool, error) {
+	changed := false
+	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, "SELECT start_date FROM unavailabilities WHERE person_id = ? AND source = ? ORDER BY start_date", personID, source)
+		if err != nil {
+			return err
+		}
+		var before []string
+		for rows.Next() {
+			var day string
+			if err := rows.Scan(&day); err != nil {
+				rows.Close()
+				return err
+			}
+			before = append(before, day)
+		}
+		rows.Close()
+		after := slices.Sorted(slices.Values(days))
+		var answered bool
+		if err := tx.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM notifications WHERE key = ?)", "answered:"+source).Scan(&answered); err != nil {
+			return err
+		}
+		if answered && slices.Equal(before, after) {
+			return nil
+		}
+		changed = true
+		if _, err := tx.ExecContext(ctx, "INSERT INTO notifications (key, sent_at) VALUES (?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) ON CONFLICT DO NOTHING", "answered:"+source); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, "DELETE FROM unavailabilities WHERE person_id = ? AND source = ?", personID, source); err != nil {
 			return err
 		}
@@ -231,6 +260,7 @@ func (s *Store) ReplacePollAbsences(ctx context.Context, personID int64, source 
 		}
 		return nil
 	})
+	return changed, err
 }
 
 func (s *Store) DeleteUnavailability(ctx context.Context, id int64) error {

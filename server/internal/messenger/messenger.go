@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 	"unicode"
 
 	"louvadeira/internal/phone"
@@ -41,7 +42,15 @@ type Messenger interface {
 type Incoming struct {
 	From Address
 	Text string
+	// NOTE: Time is when the person sent it; a text can arrive much later if the server was offline.
+	Time time.Time
 }
+
+/**
+ * NOTE: ErrMaybeDelivered marks a send WhatsApp did not confirm in time. The message may well have arrived, so it is
+ * never sent again; the returned ID is still the message's ID.
+ */
+var ErrMaybeDelivered = errors.New("o WhatsApp não confirmou o envio a tempo")
 
 var ErrNotAllowed = errors.New("destino fora da lista de permissão do modo de teste")
 

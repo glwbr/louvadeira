@@ -2,11 +2,13 @@ package notify_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	_ "time/tzdata"
@@ -26,15 +28,31 @@ type message struct {
 }
 
 type fakeMessenger struct {
+	mu   sync.Mutex
 	sent []message
 	next int
+	// NOTE: fail decides how a send ends before it happens; nil delivers everything. ErrMaybeDelivered still delivers.
+	fail func(m message) error
+}
+
+func (f *fakeMessenger) deliver(m message, prefix string) (messenger.MessageID, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.next++
+	m.id = fmt.Sprintf("%s-%d", prefix, f.next)
+	var err error
+	if f.fail != nil {
+		err = f.fail(m)
+	}
+	if err != nil && !errors.Is(err, messenger.ErrMaybeDelivered) {
+		return "", err
+	}
+	f.sent = append(f.sent, m)
+	return messenger.MessageID(m.id), err
 }
 
 func (f *fakeMessenger) SendText(_ context.Context, to messenger.Address, text string) (messenger.MessageID, error) {
-	f.next++
-	id := fmt.Sprintf("msg-%d", f.next)
-	f.sent = append(f.sent, message{id: id, to: string(to), text: text})
-	return messenger.MessageID(id), nil
+	return f.deliver(message{to: string(to), text: text}, "msg")
 }
 
 func (f *fakeMessenger) SendMention(ctx context.Context, to messenger.Address, text string, _ []messenger.Address) (messenger.MessageID, error) {
@@ -42,13 +60,12 @@ func (f *fakeMessenger) SendMention(ctx context.Context, to messenger.Address, t
 }
 
 func (f *fakeMessenger) SendPoll(_ context.Context, to messenger.Address, poll messenger.Poll) (messenger.MessageID, error) {
-	f.next++
-	id := fmt.Sprintf("poll-%d", f.next)
-	f.sent = append(f.sent, message{id: id, to: string(to), text: poll.Question, options: poll.Options, multiple: poll.Multiple})
-	return messenger.MessageID(id), nil
+	return f.deliver(message{to: string(to), text: poll.Question, options: poll.Options, multiple: poll.Multiple}, "poll")
 }
 
 func (f *fakeMessenger) to(phone string) []message {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	var out []message
 	for _, m := range f.sent {
 		if m.to == phone {
@@ -58,7 +75,11 @@ func (f *fakeMessenger) to(phone string) []message {
 	return out
 }
 
-func (f *fakeMessenger) reset() { f.sent = nil }
+func (f *fakeMessenger) reset() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sent = nil
+}
 
 var saoPaulo, _ = time.LoadLocation("America/Sao_Paulo")
 

@@ -11,6 +11,12 @@ import (
 	"louvadeira/internal/store"
 )
 
+/**
+ * CONSTRAINT: Texts that arrive more than two hours late (the server was offline) get no answer: "não posso amanhã"
+ * may no longer mean the same day, and an answer hours later surprises more than it helps.
+ */
+const staleText = 2 * time.Hour
+
 const (
 	actionAbsence = "absence"
 	actionKeep    = "keep"
@@ -22,6 +28,16 @@ const (
  * anything that is not a command, get no answer: the number also carries ordinary church conversations.
  */
 func (b *Bot) HandleText(ctx context.Context, msg messenger.Incoming) {
+	sent := b.now()
+	if !msg.Time.IsZero() {
+		if b.now().Sub(msg.Time) > staleText {
+			return
+		}
+		sent = msg.Time
+		if b.Location != nil {
+			sent = sent.In(b.Location)
+		}
+	}
 	if yes, ok := parseReply(msg.Text); ok {
 		person, err := b.Store.PersonByPhone(ctx, string(msg.From))
 		if err != nil {
@@ -32,7 +48,7 @@ func (b *Bot) HandleText(ctx context.Context, msg messenger.Incoming) {
 			return
 		}
 	}
-	cmd, ok := parseCommand(msg.Text, b.now())
+	cmd, ok := parseCommand(msg.Text, sent)
 	if !ok {
 		return
 	}

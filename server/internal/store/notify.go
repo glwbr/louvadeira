@@ -162,7 +162,7 @@ func (s *Store) SetAssignmentsStatus(ctx context.Context, personID int64, assign
 		for _, id := range assignmentIDs {
 			result, err := tx.ExecContext(ctx, `
 				UPDATE assignments SET status = ?, responded_at = ?
-				WHERE id = ? AND person_id = ? AND status != 'declined'`, status, formatTime(now), id, personID)
+				WHERE id = ? AND person_id = ? AND status != 'declined' AND status != ?`, status, formatTime(now), id, personID, status)
 			if err != nil {
 				return err
 			}
@@ -296,6 +296,60 @@ func (s *Store) Poll(ctx context.Context, messageID string) (Poll, error) {
 }
 
 /**
+ * NOTE: A vote waiting to count. Selected holds the SHA-256 of each chosen option, as WhatsApp sends them.
+ */
+type PendingVote struct {
+	PollID   string
+	Selected [][]byte
+	FromMe   bool
+}
+
+func (s *Store) SavePendingVote(ctx context.Context, vote PendingVote, now time.Time) error {
+	selected, err := json.Marshal(vote.Selected)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO pending_votes (poll_id, selected, from_me, received_at) VALUES (?, ?, ?, ?)
+		ON CONFLICT (poll_id) DO UPDATE SET selected = excluded.selected, from_me = excluded.from_me, received_at = excluded.received_at`,
+		vote.PollID, string(selected), boolInt(vote.FromMe), formatTime(now))
+	return err
+}
+
+func (s *Store) PendingVotes(ctx context.Context) ([]PendingVote, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT poll_id, selected, from_me FROM pending_votes ORDER BY received_at")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var votes []PendingVote
+	for rows.Next() {
+		var vote PendingVote
+		var selected string
+		if err := rows.Scan(&vote.PollID, &selected, &vote.FromMe); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(selected), &vote.Selected); err != nil {
+			return nil, err
+		}
+		votes = append(votes, vote)
+	}
+	return votes, rows.Err()
+}
+
+/**
+ * NOTE: Removes the vote only if it is still the one that was applied, so a newer answer that arrived meanwhile stays.
+ */
+func (s *Store) DeletePendingVote(ctx context.Context, vote PendingVote) error {
+	selected, err := json.Marshal(vote.Selected)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, "DELETE FROM pending_votes WHERE poll_id = ? AND selected = ?", vote.PollID, string(selected))
+	return err
+}
+
+/**
  * NOTE: Leaders of the ministry who have a phone; when the ministry has no leader, the administrators.
  */
 func (s *Store) Leaders(ctx context.Context, ministryID int64) ([]Person, error) {
@@ -397,6 +451,36 @@ func (s *Store) OpenCoverRequest(ctx context.Context, assignmentID int64, late b
 func (s *Store) AddCoverInvite(ctx context.Context, requestID, personID int64) error {
 	_, err := s.db.ExecContext(ctx, "INSERT INTO cover_invites (request_id, person_id) VALUES (?, ?) ON CONFLICT DO NOTHING", requestID, personID)
 	return err
+}
+
+type OpenRequest struct {
+	ID           int64
+	AssignmentID int64
+	Late         bool
+}
+
+/**
+ * NOTE: Swaps still open with nobody invited, because every invitation failed to send; opened before the given time.
+ */
+func (s *Store) UninvitedRequests(ctx context.Context, before time.Time) ([]OpenRequest, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT cr.id, cr.assignment_id, cr.late FROM cover_requests cr
+		WHERE cr.status = 'open' AND cr.created_at <= ?
+		  AND NOT EXISTS (SELECT 1 FROM cover_invites ci WHERE ci.request_id = cr.id)
+		ORDER BY cr.created_at`, formatTime(before))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var list []OpenRequest
+	for rows.Next() {
+		var r OpenRequest
+		if err := rows.Scan(&r.ID, &r.AssignmentID, &r.Late); err != nil {
+			return nil, err
+		}
+		list = append(list, r)
+	}
+	return list, rows.Err()
 }
 
 func (s *Store) CloseCoverRequest(ctx context.Context, requestID int64, now time.Time) error {

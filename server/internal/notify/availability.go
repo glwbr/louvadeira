@@ -92,14 +92,14 @@ func (b *Bot) askAvailability(ctx context.Context, ministry store.MinistryDetail
 		if !b.allows(member.Phone) {
 			continue
 		}
-		key := askedKey(ministry.ID, member.PersonID, month)
-		if first, err := b.Store.MarkNotified(ctx, key, b.now()); err != nil || !first {
-			continue
-		}
 		person := store.Person{ID: member.PersonID, Name: member.Name, Phone: member.Phone}
-		sent := true
+		// NOTE: Each part of a long poll is remembered on its own, so a part that failed is sent again alone.
 		for start := 0; start < len(occurrences); start += maxPollSlots {
 			chunk := occurrences[start:min(start+maxPollSlots, len(occurrences))]
+			part := fmt.Sprintf("%s:%d", askedKey(ministry.ID, member.PersonID, month), start)
+			if first, err := b.Store.MarkNotified(ctx, part, b.now()); err != nil || !first {
+				continue
+			}
 			options := make([]store.PollOption, 0, len(chunk)+1)
 			for _, o := range chunk {
 				label := capitalize(weekday(o.Date)) + ", " + dayMonth(o.Date)
@@ -110,10 +110,11 @@ func (b *Bot) askAvailability(ctx context.Context, ministry store.MinistryDetail
 					Ranges: []store.DateRange{{From: o.Date, To: o.Date}}})
 			}
 			options = append(options, store.PollOption{Label: optionAvailableAll, Action: actionAvailable, Ministry: ministry.ID, Month: month})
-			sent = b.sendPoll(ctx, store.PollConfirm, person, availabilityQuestion(member.Name, ministry.Name, month), options, true) && sent
-		}
-		if !sent {
-			_ = b.Store.UnmarkNotified(ctx, key)
+			if !b.sendPoll(ctx, store.PollConfirm, person, availabilityQuestion(member.Name, ministry.Name, month), options, true) {
+				_ = b.Store.UnmarkNotified(ctx, part)
+				continue
+			}
+			_, _ = b.Store.MarkNotified(ctx, askedKey(ministry.ID, member.PersonID, month), b.now())
 		}
 	}
 }
@@ -126,8 +127,12 @@ func (b *Bot) answerAvailability(ctx context.Context, person store.Person, pollI
 			labels = append(labels, weekday(o.Ranges[0].From)+", "+dayMonth(o.Ranges[0].From))
 		}
 	}
-	if err := b.Store.ReplacePollAbsences(ctx, person.ID, "enquete:"+string(pollID), days); err != nil {
+	changed, err := b.Store.ReplacePollAbsences(ctx, person.ID, "enquete:"+string(pollID), days)
+	if err != nil {
 		b.Log.Error("guardar disponibilidade", "erro", err)
+		return
+	}
+	if !changed {
 		return
 	}
 	first := options[0]
@@ -197,7 +202,10 @@ func (b *Bot) proposeSchedule(ctx context.Context, ministry store.MinistryDetail
 	}
 }
 
-func (b *Bot) answerApproval(ctx context.Context, leader store.Person, option store.PollOption) {
+func (b *Bot) answerApproval(ctx context.Context, leader store.Person, pollID messenger.MessageID, option store.PollOption) {
+	if first, err := b.Store.MarkNotified(ctx, fmt.Sprintf("approval:%s:%s", pollID, option.Action), b.now()); err != nil || !first {
+		return
+	}
 	if option.Action == actionEdit {
 		b.send(ctx, leader.Phone, editReply())
 		return

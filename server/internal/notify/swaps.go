@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"louvadeira/internal/store"
 )
@@ -26,6 +27,8 @@ type swap struct {
 	late    bool
 	invited []string
 	blocked []string
+	// NOTE: failed holds who could not be reached because the send failed; the swap stays open to try them again.
+	failed []string
 }
 
 /**
@@ -95,7 +98,7 @@ func (b *Bot) decline(ctx context.Context, assignmentIDs []int64, byMember bool,
 	b.later(ctx, func(ctx context.Context) {
 		b.inviteCovers(ctx, swaps, why)
 		for _, s := range swaps {
-			if len(s.invited) == 0 {
+			if len(s.invited) == 0 && len(s.failed) == 0 {
 				_ = b.Store.CloseCoverRequest(ctx, s.request, b.now())
 			}
 		}
@@ -217,6 +220,11 @@ func (b *Bot) inviteCovers(ctx context.Context, swaps []*swap, why absence) {
 		for start := 0; start < len(offers); start += maxPollSlots {
 			chunk := offers[start:min(start+maxPollSlots, len(offers))]
 			if !b.sendInvite(ctx, candidate, chunk, why) {
+				for _, o := range chunk {
+					for _, s := range o.swaps {
+						s.failed = append(s.failed, candidate.Name)
+					}
+				}
 				continue
 			}
 			for _, o := range chunk {
@@ -359,19 +367,19 @@ func (b *Bot) alertDeclined(ctx context.Context, swaps []*swap, why absence) boo
 
 		var alert string
 		if len(list) == 1 && why.period == "" {
-			alert = declinedAlert(first, list[0].late, list[0].invited)
+			alert = declinedAlert(first, list[0].late, list[0].invited, list[0].failed)
 		} else {
 			lines := []string{declinedManyHeader(first, why)}
 			services, byService := groupBy(list, func(s *swap) string { return s.detail.Date + "#" + s.detail.StartTime })
 			for _, key := range services {
 				group := byService[key]
 				if len(group) == 1 {
-					lines = append(lines, declinedManyLine(group[0].detail, group[0].late, group[0].invited))
+					lines = append(lines, declinedManyLine(group[0].detail, group[0].late, group[0].invited, group[0].failed))
 					continue
 				}
 				lines = append(lines, serviceHeaderLine(group[0].detail, group[0].late))
 				for _, s := range group {
-					lines = append(lines, roleSubLine(s.detail.RoleName, s.invited))
+					lines = append(lines, roleSubLine(s.detail.RoleName, s.invited, s.failed))
 				}
 			}
 			alert = strings.Join(lines, "\n")
@@ -397,7 +405,7 @@ func (b *Bot) thankAbsent(ctx context.Context, swaps []*swap, told bool) {
 				invited = append(invited, name)
 			}
 		}
-		if len(s.invited) == 0 {
+		if len(s.invited) == 0 && len(s.failed) == 0 {
 			uncovered = append(uncovered, slotLine(s.detail))
 		}
 	}
@@ -524,8 +532,10 @@ func (b *Bot) acceptCovers(ctx context.Context, substitute store.Person, groups 
 		list := byHandover[k]
 		absent, d := list[0].Absent, list[0].Assignment
 		b.send(ctx, absent.Phone, replacedNotice(absent.Name, substitute.Name, slotLines(list)))
-		b.tellLeaders(ctx, d.MinistryID, swapAnnouncement(d.MinistryName, substitute.Name, absent.Name, slotLines(list)), absent.ID, substitute.ID)
-		if d.WhatsAppGroup != "" {
+		// NOTE: Leaders are in the group, so with a group they read the change there and not twice.
+		if d.WhatsAppGroup == "" {
+			b.tellLeaders(ctx, d.MinistryID, swapAnnouncement(d.MinistryName, substitute.Name, absent.Name, slotLines(list)), absent.ID, substitute.ID)
+		} else {
 			text := swapAnnouncement(d.MinistryName, mentionOf(substitute), mentionOf(absent), slotLines(list))
 			b.mention(ctx, d.WhatsAppGroup, text, substitute, absent)
 		}
@@ -606,4 +616,44 @@ func groupBy[T any, K comparable](items []T, key func(T) K) ([]K, map[K][]T) {
 		groups[k] = append(groups[k], item)
 	}
 	return order, groups
+}
+
+// NOTE: How long a swap waits after its invitations failed before trying them again, and before giving up.
+const (
+	retryAfter = 2 * time.Minute
+	retryUntil = 24 * time.Hour
+)
+
+/**
+ * NOTE: Retries swaps whose invitations all failed to send (WhatsApp was down). Once someone can be invited the swap
+ * goes on as usual; when nobody is free anymore, or a day went by, the leaders hear it needs them.
+ */
+func (b *Bot) retryInvites(ctx context.Context) {
+	requests, err := b.Store.UninvitedRequests(ctx, b.now().Add(-retryAfter))
+	if err != nil {
+		b.Log.Error("buscar trocas sem convite", "erro", err)
+		return
+	}
+	for _, r := range requests {
+		d, err := b.Store.AssignmentDetail(ctx, r.AssignmentID)
+		if err != nil {
+			continue
+		}
+		result, err := b.Store.CoverRequestResult(ctx, r.ID)
+		if err != nil {
+			continue
+		}
+		opened, _ := time.Parse(time.RFC3339Nano, result.Request.CreatedAt)
+		s := &swap{detail: d, request: r.ID, late: r.Late}
+		if b.Upcoming(d) {
+			b.inviteCovers(ctx, []*swap{s}, absence{})
+		}
+		if len(s.invited) > 0 || (len(s.failed) > 0 && b.now().Sub(opened) < retryUntil && b.Upcoming(d)) {
+			continue
+		}
+		_ = b.Store.CloseCoverRequest(ctx, r.ID, b.now())
+		if b.Upcoming(d) {
+			b.tellLeaders(ctx, d.MinistryID, uncoveredAlert(d, result.Absent.Name, []string{slotLine(d)}), result.Absent.ID)
+		}
+	}
 }

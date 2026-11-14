@@ -247,11 +247,23 @@ func (c *Client) SendText(ctx context.Context, to messenger.Address, text string
 	if err != nil {
 		return "", err
 	}
-	resp, err := c.wm.SendMessage(ctx, jid, &waE2E.Message{Conversation: proto.String(text)})
-	if err != nil {
+	return c.send(ctx, jid, &waE2E.Message{Conversation: proto.String(text)})
+}
+
+/**
+ * NOTE: The message ID is chosen before sending, so a send WhatsApp did not confirm in time still has an ID: a poll
+ * sent that way keeps working when someone answers it.
+ */
+func (c *Client) send(ctx context.Context, to types.JID, message *waE2E.Message) (messenger.MessageID, error) {
+	id := c.wm.GenerateMessageID()
+	_, err := c.wm.SendMessage(ctx, to, message, whatsmeow.SendRequestExtra{ID: id})
+	switch {
+	case errors.Is(err, whatsmeow.ErrMessageTimedOut):
+		return messenger.MessageID(id), fmt.Errorf("%w: %v", messenger.ErrMaybeDelivered, err)
+	case err != nil:
 		return "", fmt.Errorf("enviar mensagem: %w", err)
 	}
-	return messenger.MessageID(resp.ID), nil
+	return messenger.MessageID(id), nil
 }
 
 /**
@@ -283,14 +295,10 @@ func (c *Client) SendMention(ctx context.Context, to messenger.Address, text str
 		text = strings.ReplaceAll(text, "@"+string(person.Normalize()), "@"+target.User)
 		jids = append(jids, target.String())
 	}
-	resp, err := c.wm.SendMessage(ctx, jid, &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+	return c.send(ctx, jid, &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{
 		Text:        proto.String(text),
 		ContextInfo: &waE2E.ContextInfo{MentionedJID: jids},
 	}})
-	if err != nil {
-		return "", fmt.Errorf("enviar mensagem: %w", err)
-	}
-	return messenger.MessageID(resp.ID), nil
 }
 
 func (c *Client) SendPoll(ctx context.Context, to messenger.Address, poll messenger.Poll) (messenger.MessageID, error) {
@@ -303,11 +311,7 @@ func (c *Client) SendPoll(ctx context.Context, to messenger.Address, poll messen
 	if poll.Multiple {
 		selectable = 0
 	}
-	resp, err := c.wm.SendMessage(ctx, jid, c.wm.BuildPollCreation(poll.Question, poll.Options, selectable))
-	if err != nil {
-		return "", fmt.Errorf("enviar enquete: %w", err)
-	}
-	return messenger.MessageID(resp.ID), nil
+	return c.send(ctx, jid, c.wm.BuildPollCreation(poll.Question, poll.Options, selectable))
 }
 
 /**
@@ -376,7 +380,7 @@ func (c *Client) handleText(e *events.Message) {
 	if phone == "" {
 		return
 	}
-	go handler(ctx, messenger.Incoming{From: messenger.Address(phone), Text: text})
+	go handler(ctx, messenger.Incoming{From: messenger.Address(phone), Text: text, Time: e.Info.Timestamp})
 }
 
 func (c *Client) senderPhone(ctx context.Context, info types.MessageInfo) string {

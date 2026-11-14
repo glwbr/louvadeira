@@ -126,15 +126,21 @@ func coverOption(label string) string {
 	return "✅ " + capitalize(label)
 }
 
-func declinedAlert(d store.AssignmentDetail, late bool, invited []string) string {
+func declinedAlert(d store.AssignmentDetail, late bool, invited, failed []string) string {
 	text := fmt.Sprintf("⚠️ *%s* não vai conseguir ir no %s\n%s", d.PersonName, d.MinistryName, slotLine(d))
 	if late {
 		text += "\n⏰ Avisou com menos de 72h"
 	}
 	if len(invited) > 0 {
-		return text + "\n🙋 Chamei " + joinNames(invited) + " para substituir"
+		text += "\n🙋 Chamei " + joinNames(invited) + " para substituir"
 	}
-	return text + "\n🙋 Ninguém da equipe está livre, vai precisar da sua ajuda"
+	if len(failed) > 0 {
+		text += "\n📵 Não consegui avisar " + joinNames(failed) + " agora; vou tentar de novo em alguns minutos"
+	}
+	if len(invited) == 0 && len(failed) == 0 {
+		text += "\n🙋 Ninguém da equipe está livre, vai precisar da sua ajuda"
+	}
+	return text
 }
 
 func declinedManyHeader(d store.AssignmentDetail, why absence) string {
@@ -148,13 +154,8 @@ func declinedManyHeader(d store.AssignmentDetail, why absence) string {
 	return header
 }
 
-func declinedManyLine(d store.AssignmentDetail, late bool, invited []string) string {
-	line := slotLine(d)
-	if len(invited) > 0 {
-		line += ": chamei " + joinNames(invited)
-	} else {
-		line += ": ninguém livre, vai precisar da sua ajuda"
-	}
+func declinedManyLine(d store.AssignmentDetail, late bool, invited, failed []string) string {
+	line := slotLine(d) + ": " + inviteStatus(invited, failed)
 	if late {
 		line += " ⏰"
 	}
@@ -169,11 +170,20 @@ func serviceHeaderLine(d store.AssignmentDetail, late bool) string {
 	return line
 }
 
-func roleSubLine(role string, invited []string) string {
-	if len(invited) > 0 {
-		return "   ◦ " + role + ": chamei " + joinNames(invited)
+func roleSubLine(role string, invited, failed []string) string {
+	return "   ◦ " + role + ": " + inviteStatus(invited, failed)
+}
+
+func inviteStatus(invited, failed []string) string {
+	switch {
+	case len(invited) > 0 && len(failed) > 0:
+		return "chamei " + joinNames(invited) + "; vou tentar avisar " + joinNames(failed) + " de novo"
+	case len(invited) > 0:
+		return "chamei " + joinNames(invited)
+	case len(failed) > 0:
+		return "não consegui avisar " + joinNames(failed) + " agora, vou tentar de novo"
 	}
-	return "   ◦ " + role + ": ninguém livre, vai precisar da sua ajuda"
+	return "ninguém livre, vai precisar da sua ajuda"
 }
 
 func blockedNote(names []string) string {

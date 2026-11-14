@@ -146,12 +146,17 @@ func keepConnecting(ctx context.Context, wa *whatsapp.Client, log *slog.Logger) 
 func runScheduler(ctx context.Context, bot *notify.Bot, wa *whatsapp.Client) {
 	timer := time.NewTimer(30 * time.Second)
 	defer timer.Stop()
+	replayed := false
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
 			if wa.Status().Connected {
+				if !replayed {
+					bot.ReplayPendingVotes(ctx)
+					replayed = true
+				}
 				bot.Tick(ctx)
 			}
 			timer.Reset(5 * time.Minute)

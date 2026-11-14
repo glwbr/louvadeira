@@ -86,11 +86,24 @@ func (b *Bot) send(ctx context.Context, to string, text string) bool {
 	if to == "" || b.Messenger == nil {
 		return false
 	}
-	if _, err := b.Messenger.SendText(ctx, messenger.Address(to), text); err != nil {
-		b.logSendError(to, err)
-		return false
+	_, err := b.Messenger.SendText(ctx, messenger.Address(to), text)
+	return b.delivered(to, err)
+}
+
+/**
+ * INVARIANT: A send WhatsApp did not confirm in time counts as delivered. Sending it again risks the person getting
+ * it twice; if it really got lost, the leaders' "falta responder" alert still catches it.
+ */
+func (b *Bot) delivered(to string, err error) bool {
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, messenger.ErrMaybeDelivered):
+		b.Log.Warn("envio sem confirmação do WhatsApp; não vou repetir", "para", "…"+tail(to))
+		return true
 	}
-	return true
+	b.logSendError(to, err)
+	return false
 }
 
 /**
@@ -107,11 +120,8 @@ func (b *Bot) mention(ctx context.Context, group string, text string, people ...
 			marked = append(marked, messenger.Address(p.Phone))
 		}
 	}
-	if _, err := b.Messenger.SendMention(ctx, messenger.Address(group), text, marked); err != nil {
-		b.logSendError(group, err)
-		return false
-	}
-	return true
+	_, err := b.Messenger.SendMention(ctx, messenger.Address(group), text, marked)
+	return b.delivered(group, err)
 }
 
 func mentionOf(p store.Person) string {
@@ -126,8 +136,7 @@ func (b *Bot) sendPoll(ctx context.Context, kind string, person store.Person, qu
 		return false
 	}
 	id, err := b.Messenger.SendPoll(ctx, messenger.Address(person.Phone), messenger.Poll{Question: question, Options: labelsOf(options), Multiple: multiple})
-	if err != nil {
-		b.logSendError(person.Phone, err)
+	if !b.delivered(person.Phone, err) {
 		return false
 	}
 	if err := b.Store.SavePoll(ctx, store.Poll{MessageID: string(id), Kind: kind, PersonID: person.ID, Options: options}, b.now()); err != nil {
@@ -212,6 +221,7 @@ func (b *Bot) Tick(ctx context.Context) {
 			future = append(future, d)
 		}
 	}
+	b.retryInvites(ctx)
 	b.sendConfirmations(ctx, future, now)
 	if now.Hour() >= reminderHour {
 		b.sendReminders(ctx, future, now.AddDate(0, 0, 1).Format("2006-01-02"))
@@ -419,6 +429,10 @@ func (b *Bot) HandleVote(ctx context.Context, vote messenger.Vote) {
 		b.applyVote(ctx, vote)
 		return
 	}
+	waiting := store.PendingVote{PollID: string(vote.PollID), Selected: vote.Selected, FromMe: vote.FromMe}
+	if err := b.Store.SavePendingVote(ctx, waiting, b.now()); err != nil {
+		b.Log.Error("guardar voto", "erro", err)
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.pending == nil {
@@ -431,8 +445,26 @@ func (b *Bot) HandleVote(ctx context.Context, vote messenger.Vote) {
 		b.mu.Lock()
 		delete(b.pending, vote.PollID)
 		b.mu.Unlock()
-		b.applyVote(context.Background(), vote)
+		ctx := context.Background()
+		b.applyVote(ctx, vote)
+		_ = b.Store.DeletePendingVote(ctx, waiting)
 	})
+}
+
+/**
+ * NOTE: Applies the votes that were still waiting when the server stopped. Every answer is safe to apply again, so a
+ * vote that was also applied before the stop changes nothing and sends nothing.
+ */
+func (b *Bot) ReplayPendingVotes(ctx context.Context) {
+	votes, err := b.Store.PendingVotes(ctx)
+	if err != nil {
+		b.Log.Error("ler votos pendentes", "erro", err)
+		return
+	}
+	for _, v := range votes {
+		b.applyVote(ctx, messenger.Vote{PollID: messenger.MessageID(v.PollID), Selected: v.Selected, FromMe: v.FromMe})
+		_ = b.Store.DeletePendingVote(ctx, v)
+	}
 }
 
 func (b *Bot) applyVote(ctx context.Context, vote messenger.Vote) {
@@ -480,7 +512,7 @@ func (b *Bot) applyVote(ctx context.Context, vote messenger.Vote) {
 		b.answerAvailability(ctx, person, vote.PollID, poll.Options, chosen)
 		return
 	case hasAction(poll.Options, actionPublish):
-		b.answerApproval(ctx, person, chosen[len(chosen)-1])
+		b.answerApproval(ctx, person, vote.PollID, chosen[len(chosen)-1])
 		return
 	}
 	option := chosen[len(chosen)-1]
