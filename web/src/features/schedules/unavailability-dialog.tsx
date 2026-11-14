@@ -103,34 +103,42 @@ function UnavailabilityForm({ defaultDate, onSaved }: { defaultDate: string; onS
   )
 }
 
-function OpenCovers({ absence, onDone }: { absence: Unavailability; onDone: () => void }) {
+/**
+ * NOTE: Offers to find substitutes for the services an absence falls on. With mine, it is the member talking about
+ * their own absence on their page; otherwise a leader acting for someone.
+ */
+export function OpenCovers({ absence, onDone, mine = false }: { absence: Unavailability; onDone: () => void; mine?: boolean }) {
   const queryClient = useQueryClient()
   const slots = useQuery({
-    queryKey: queryKeys.unavailabilityAssignments(absence.id),
-    queryFn: () => api.unavailabilities.assignments(absence.id),
+    queryKey: mine ? queryKeys.myAbsenceSlots(absence.id) : queryKeys.unavailabilityAssignments(absence.id),
+    queryFn: () => (mine ? api.mine.absenceSlots(absence.id) : api.unavailabilities.assignments(absence.id)),
   })
   const open = useMutation({
-    mutationFn: () => api.unavailabilities.openCovers(absence.id),
+    mutationFn: () => (mine ? api.mine.openCovers(absence.id) : api.unavailabilities.openCovers(absence.id)),
     onSuccess: (requests) => {
       queryClient.invalidateQueries({ queryKey: ["unavailabilities"] })
       queryClient.invalidateQueries({ queryKey: ["schedules"] })
-      toast.success(requests.length === 1 ? "Troca aberta" : `${requests.length} trocas abertas`)
+      queryClient.invalidateQueries({ queryKey: ["mine"] })
+      toast.success(
+        requests.length === 1 ? "Pronto! Já estamos procurando substituto." : `Pronto! Já estamos procurando substituto para os ${requests.length} cultos.`
+      )
       onDone()
     },
     onError: toastError,
   })
 
   const count = slots.data?.length ?? absence.scheduled
+  const services = count === 1 ? "1 culto" : `${count} cultos`
   const ministries = new Set(slots.data?.map((slot) => slot.ministryId))
 
   return (
     <div className="flex flex-col gap-4">
       <DialogHeader>
-        <DialogTitle>Abrir trocas</DialogTitle>
+        <DialogTitle>Procurar substituto</DialogTitle>
         <DialogDescription>
-          {firstName(absence.personName)} tem {count === 1 ? "1 culto" : `${count} cultos`} na escala que caem nessa
-          ausência ({absenceLabel(absence).toLowerCase()}). Quem pode substituir recebe uma enquete no WhatsApp com os
-          cultos que pode pegar, e quem marcar primeiro fica com o culto.
+          {mine ? `Você tem ${services}` : `${firstName(absence.personName)} tem ${services}`} na escala nesse período (
+          {absenceLabel(absence).toLowerCase()}). Quem pode substituir recebe uma mensagem no WhatsApp, e quem responder
+          primeiro fica com o culto.
         </DialogDescription>
       </DialogHeader>
       {slots.isPending ? (
@@ -139,13 +147,13 @@ function OpenCovers({ absence, onDone }: { absence: Unavailability; onDone: () =
           <Skeleton className="h-5 w-2/3" />
         </div>
       ) : count === 0 ? (
-        <p className="text-sm text-muted-foreground">Nenhum culto para trocar: as trocas já foram abertas.</p>
+        <p className="text-sm text-muted-foreground">Nenhum culto pendente: já estamos procurando substituto.</p>
       ) : (
         <ul className="flex flex-col gap-1.5 text-sm">
           {slots.data?.map((slot) => (
             <li key={slot.assignmentId} className="flex items-baseline justify-between gap-3">
               <span>
-                {weekdayOf(slot.date)} {formatDay(slot.date)} · {slot.startTime.replace(":", "h")}
+                {weekdayOf(slot.date)}, {formatDay(slot.date)} · {slot.startTime.replace(":", "h")}
               </span>
               <span className="text-muted-foreground">
                 {slot.roleName}
@@ -156,14 +164,14 @@ function OpenCovers({ absence, onDone }: { absence: Unavailability; onDone: () =
         </ul>
       )}
       <p className="text-xs text-muted-foreground">
-        O motivo ({REASON_LABEL[absence.reason].toLowerCase()}) só aparece para a liderança.
+        O motivo ({REASON_LABEL[absence.reason].toLowerCase()}) fica só com a liderança.
       </p>
       <DialogFooter>
         <Button variant="outline" onClick={onDone}>
           Agora não
         </Button>
         <Button onClick={() => open.mutate()} disabled={open.isPending || slots.isPending || count === 0}>
-          {open.isPending ? "Abrindo…" : count === 1 ? "Abrir troca" : `Abrir trocas para os ${count}`}
+          {open.isPending ? "Enviando…" : "Procurar substituto"}
         </Button>
       </DialogFooter>
     </div>

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { CalendarClock, ChevronRight, Church, MessageCircle, Users, type LucideIcon } from "lucide-react"
+import { CalendarClock, CalendarHeart, ChevronRight, Church, MessageCircle, Users, type LucideIcon } from "lucide-react"
 import { Link } from "react-router"
 
 import { Badge } from "@/components/ui/badge"
@@ -27,6 +27,17 @@ export function HomePage() {
         <h1 className="text-2xl font-semibold tracking-tight">Olá, {firstName(me.data?.name ?? "")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">Cadastro dos ministérios da igreja.</p>
       </div>
+
+      <Link
+        to="/minha-escala"
+        className="flex items-center justify-between rounded-xl border bg-card px-4 py-3 transition-colors hover:bg-accent"
+      >
+        <span className="flex items-center gap-2 text-sm font-medium">
+          <CalendarHeart className="size-4 text-primary" />
+          Minhas escalas
+        </span>
+        <ChevronRight className="size-4 text-muted-foreground" />
+      </Link>
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Shortcut to="/ministerios" icon={Church} label="Ministérios" count={ministries.data?.length} />

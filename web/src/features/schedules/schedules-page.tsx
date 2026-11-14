@@ -333,7 +333,7 @@ function UnavailabilityCard({ list, defaultDate }: { list: Unavailability[]; def
               {u.scheduled > 0 && (
                 <Button size="sm" variant="outline" onClick={() => setSwapsFor(u)}>
                   <ArrowLeftRight />
-                  {u.scheduled === 1 ? "Abrir troca" : `Abrir ${u.scheduled} trocas`}
+                  {u.scheduled === 1 ? "Procurar substituto" : `Substitutos (${u.scheduled})`}
                 </Button>
               )}
               <Button

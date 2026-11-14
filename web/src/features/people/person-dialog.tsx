@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { MessageCircle } from "lucide-react"
 import { useState, type FormEvent } from "react"
 import { toast } from "sonner"
 
@@ -9,7 +10,7 @@ import { Label } from "@/components/ui/label"
 import { ConfirmButton } from "@/components/confirm-button"
 import { api, queryKeys, type Person } from "@/lib/api"
 import { toastError } from "@/lib/errors"
-import { formatPhone } from "@/lib/format"
+import { firstName, formatPhone } from "@/lib/format"
 
 type Props = {
   open: boolean
@@ -42,6 +43,11 @@ function PersonForm({ person, canArchive, onDone }: { person?: Person; canArchiv
       toast.success(person ? "Pessoa atualizada" : "Pessoa cadastrada")
       onDone()
     },
+    onError: toastError,
+  })
+  const sendLink = useMutation({
+    mutationFn: () => api.people.sendLink(person!.id),
+    onSuccess: () => toast.success(`Link enviado no WhatsApp de ${firstName(person!.name)}`),
     onError: toastError,
   })
   const archive = useMutation({
@@ -81,6 +87,12 @@ function PersonForm({ person, canArchive, onDone }: { person?: Person; canArchiv
           onChange={(e) => setPhone(e.target.value)}
         />
       </div>
+      {person?.phone && (
+        <Button type="button" variant="outline" disabled={sendLink.isPending} onClick={() => sendLink.mutate()}>
+          <MessageCircle />
+          {sendLink.isPending ? "Enviando…" : "Mandar link de acesso no WhatsApp"}
+        </Button>
+      )}
       <DialogFooter className="gap-2 sm:justify-between">
         {person && canArchive ? (
           <ConfirmButton

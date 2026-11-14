@@ -163,6 +163,20 @@ export type Unavailability = {
 
 export type UnavailabilityInput = Omit<Unavailability, "id" | "personName" | "scheduled">
 
+export type MemberSlot = {
+  assignmentId: number
+  ministryId: number
+  ministryName: string
+  serviceId: number
+  serviceName: string
+  date: string
+  startTime: string
+  roleName: string
+  status: AssignmentStatus
+  coverOpen: boolean
+  communion: boolean
+}
+
 export type AffectedSlot = {
   assignmentId: number
   ministryId: number
@@ -204,12 +218,26 @@ export const api = {
   me: () => request<Person>("GET", "/me"),
   redeem: (token: string) => request<Person>("POST", "/auth/redeem", { token }),
   logout: () => request<void>("POST", "/auth/logout"),
+  requestLink: (phone: string) => request<{ ok: boolean }>("POST", "/auth/link", { phone }),
+
+  mine: {
+    slots: () => request<MemberSlot[]>("GET", "/me/assignments"),
+    confirm: (assignmentIds: number[]) => request<void>("POST", "/me/confirm", { assignmentIds }),
+    decline: (assignmentIds: number[]) => request<CoverRequest[]>("POST", "/me/decline", { assignmentIds }),
+    absences: () => request<Unavailability[]>("GET", "/me/unavailabilities"),
+    createAbsence: (input: Omit<UnavailabilityInput, "personId">) =>
+      request<Unavailability>("POST", "/me/unavailabilities", input),
+    removeAbsence: (id: number) => request<void>("DELETE", `/me/unavailabilities/${id}`),
+    absenceSlots: (id: number) => request<AffectedSlot[]>("GET", `/me/unavailabilities/${id}/assignments`),
+    openCovers: (id: number) => request<CoverRequest[]>("POST", `/me/unavailabilities/${id}/covers`),
+  },
 
   people: {
     list: () => request<Person[]>("GET", "/people"),
     create: (input: PersonInput) => request<Person>("POST", "/people", input),
     update: (id: number, input: PersonInput) => request<Person>("PUT", `/people/${id}`, input),
     archive: (id: number) => request<void>("DELETE", `/people/${id}`),
+    sendLink: (id: number) => request<void>("POST", `/people/${id}/link`),
   },
 
   services: {
@@ -279,4 +307,7 @@ export const queryKeys = {
   whatsappGroups: ["whatsapp-groups"] as const,
   unavailabilities: (from: string, to: string) => ["unavailabilities", from, to] as const,
   unavailabilityAssignments: (id: number) => ["unavailabilities", id, "assignments"] as const,
+  mySlots: ["mine", "slots"] as const,
+  myAbsences: ["mine", "absences"] as const,
+  myAbsenceSlots: (id: number) => ["mine", "absences", id, "slots"] as const,
 }
