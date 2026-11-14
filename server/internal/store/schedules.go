@@ -77,28 +77,12 @@ func (s *Store) GenerateDraft(ctx context.Context, ministryID int64, month strin
 	if err != nil {
 		return err
 	}
-	var services []schedule.Service
-	all, err := s.ListServices(ctx)
-	if err != nil {
-		return err
-	}
-	for _, sv := range all {
-		if sv.Active && containsID(ministry.ServiceIDs, sv.ID) {
-			services = append(services, schedule.Service{ID: sv.ID, Weekday: time.Weekday(sv.Weekday), StartTime: sv.StartTime})
-		}
-	}
-	if len(services) == 0 {
-		return invalid("marque na aba Cultos em quais cultos este ministério serve")
-	}
 	if len(ministry.Roles) == 0 {
 		return invalid("cadastre as funções do ministério antes de gerar a escala")
 	}
-	groups, err := schedule.Period(month, services, schedule.Unit(ministry.RotationUnit))
+	groups, err := s.period(ctx, ministry, month)
 	if err != nil {
-		return invalid("%s", err.Error())
-	}
-	if len(groups) == 0 {
-		return invalid("não há cultos deste ministério neste mês")
+		return err
 	}
 	first := groups[0].Occurrences[0].Date
 	lastGroup := groups[len(groups)-1].Occurrences
@@ -274,6 +258,64 @@ func (s *Store) DiscardDraft(ctx context.Context, ministryID int64, month string
 	}
 	_, err = s.db.ExecContext(ctx, "DELETE FROM schedules WHERE ministry_id = ? AND month = ? AND status = 'draft'", ministryID, month)
 	return err
+}
+
+/**
+ * NOTE: The ministry's services in a month, grouped the way it rotates.
+ */
+func (s *Store) period(ctx context.Context, ministry MinistryDetail, month string) ([]schedule.Group, error) {
+	var services []schedule.Service
+	all, err := s.ListServices(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, sv := range all {
+		if sv.Active && containsID(ministry.ServiceIDs, sv.ID) {
+			services = append(services, schedule.Service{ID: sv.ID, Weekday: time.Weekday(sv.Weekday), StartTime: sv.StartTime})
+		}
+	}
+	if len(services) == 0 {
+		return nil, invalid("marque na aba Cultos em quais cultos este ministério serve")
+	}
+	groups, err := schedule.Period(month, services, schedule.Unit(ministry.RotationUnit))
+	if err != nil {
+		return nil, invalid("%s", err.Error())
+	}
+	if len(groups) == 0 {
+		return nil, invalid("não há cultos deste ministério neste mês")
+	}
+	return groups, nil
+}
+
+/**
+ * NOTE: Every service of the ministry in the month, in date order, for asking the team about it.
+ */
+func (s *Store) MonthOccurrences(ctx context.Context, ministryID int64, month string) ([]schedule.Occurrence, error) {
+	ministry, err := s.Ministry(ctx, ministryID)
+	if err != nil {
+		return nil, err
+	}
+	groups, err := s.period(ctx, ministry, month)
+	if err != nil {
+		return nil, err
+	}
+	var occurrences []schedule.Occurrence
+	for _, group := range groups {
+		occurrences = append(occurrences, group.Occurrences...)
+	}
+	return occurrences, nil
+}
+
+/**
+ * NOTE: "draft", "published", or "" when the month has no schedule yet.
+ */
+func (s *Store) ScheduleStatus(ctx context.Context, ministryID int64, month string) (string, error) {
+	var status string
+	err := s.db.QueryRowContext(ctx, "SELECT status FROM schedules WHERE ministry_id = ? AND month = ?", ministryID, month).Scan(&status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return status, err
 }
 
 func (s *Store) PublishSchedule(ctx context.Context, ministryID int64, month string, now time.Time) error {

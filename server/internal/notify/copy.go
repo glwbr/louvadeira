@@ -236,3 +236,61 @@ func keptReply() string {
 func alreadyToldReply() string {
 	return "Eu já tinha avisado a liderança 🙂 Se mudou de ideia, fala com a liderança."
 }
+
+const (
+	optionAvailableAll = "✅ Posso em todos"
+	optionPublish      = "✅ Pode publicar"
+	optionEdit         = "✏️ Vou ajustar no app"
+)
+
+func availabilityQuestion(name, ministry, month string) string {
+	return fmt.Sprintf("Oi, %s! Vamos montar a escala de %s do %s 🎶 Em quais destes cultos você *não* vai poder? Pode marcar mais de um. Se puder em todos, marque a última opção.",
+		firstName(name), monthName(month), ministry)
+}
+
+func availabilityReply(name string, days []string) string {
+	if len(days) == 0 {
+		return fmt.Sprintf("Anotado, %s! Você pode em todos 🙌", firstName(name))
+	}
+	return fmt.Sprintf("Anotado, %s! Você não pode: %s. Se mudar algo, é só trocar a resposta 🙂", firstName(name), joinNames(days))
+}
+
+func availabilityReminder(name, month string) string {
+	return fmt.Sprintf("Oi, %s! Ainda falta você responder a enquete da escala de %s 🙂 É só marcar os cultos em que não vai poder, ou \"Posso em todos\", na enquete que eu mandei.",
+		firstName(name), monthName(month))
+}
+
+func draftProposal(ministry, month, summary string, answered, asked, warnings int) string {
+	text := fmt.Sprintf("Montei a escala de %s do %s com as respostas da enquete (%d de %d responderam) 🎶", monthName(month), ministry, answered, asked)
+	if warnings > 0 {
+		text += fmt.Sprintf(" Atenção: %d %s para revisar.", warnings, plural(warnings, "ponto", "pontos"))
+	}
+	return text + "\n\n" + summary
+}
+
+func approvalQuestion(month string) string {
+	return fmt.Sprintf("Posso publicar a escala de %s no grupo?", monthName(month))
+}
+
+func publishedReply(month string) string {
+	return fmt.Sprintf("Publicada! 🎉 Já mandei a escala de %s no grupo.", monthName(month))
+}
+
+func alreadyPublishedReply(month string) string {
+	return fmt.Sprintf("A escala de %s já estava publicada 🙂", monthName(month))
+}
+
+func editReply() string {
+	return "Combinado! Quando terminar os ajustes, é só publicar pelo app 🙂"
+}
+
+func draftFailedAlert(ministry, month string, err error) string {
+	return fmt.Sprintf("Não consegui montar a escala de %s do %s: %s.", monthName(month), ministry, err)
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}

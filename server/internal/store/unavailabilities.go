@@ -46,6 +46,8 @@ type Unavailability struct {
 	Repeat      Repeat `json:"repeat"`
 	Weekday     *int   `json:"weekday"`
 	WeekOfMonth *int   `json:"weekOfMonth"`
+	// NOTE: FromPoll is true for days the person marked in the monthly availability poll.
+	FromPoll bool `json:"fromPoll"`
 }
 
 /**
@@ -132,12 +134,12 @@ func (in UnavailabilityInput) clean() (UnavailabilityInput, error) {
 	return out, nil
 }
 
-const unavailabilityColumns = `u.id, u.person_id, p.name, u.start_date, u.end_date, u.reason, u.repeat, u.weekday, u.week_of_month`
+const unavailabilityColumns = `u.id, u.person_id, p.name, u.start_date, u.end_date, u.reason, u.repeat, u.weekday, u.week_of_month, u.source IS NOT NULL`
 
 func scanUnavailability(row interface{ Scan(...any) error }) (Unavailability, error) {
 	var u Unavailability
 	var weekday, week sql.NullInt64
-	err := row.Scan(&u.ID, &u.PersonID, &u.PersonName, &u.StartDate, &u.EndDate, &u.Reason, &u.Repeat, &weekday, &week)
+	err := row.Scan(&u.ID, &u.PersonID, &u.PersonName, &u.StartDate, &u.EndDate, &u.Reason, &u.Repeat, &weekday, &week, &u.FromPoll)
 	if u.EndDate == forever {
 		u.EndDate = ""
 	}
@@ -210,6 +212,25 @@ func (s *Store) Unavailability(ctx context.Context, id int64) (Unavailability, e
 		SELECT `+unavailabilityColumns+`
 		FROM unavailabilities u JOIN people p ON p.id = u.person_id WHERE u.id = ?`, id))
 	return u, notFoundIfNoRows(err)
+}
+
+/**
+ * NOTE: Replaces the days a person marked in one availability poll with the ones in their latest answer.
+ */
+func (s *Store) ReplacePollAbsences(ctx context.Context, personID int64, source string, days []string) error {
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM unavailabilities WHERE person_id = ? AND source = ?", personID, source); err != nil {
+			return err
+		}
+		for _, day := range days {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO unavailabilities (person_id, start_date, end_date, reason, source) VALUES (?, ?, ?, 'outro', ?)`,
+				personID, day, day, source); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (s *Store) DeleteUnavailability(ctx context.Context, id int64) error {

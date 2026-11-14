@@ -181,6 +181,9 @@ type PollOption struct {
 	Requests []int64 `json:"requests,omitempty"`
 	// NOTE: Ranges is set on an option that registers an absence the person announced by message.
 	Ranges []DateRange `json:"ranges,omitempty"`
+	// NOTE: Ministry and Month identify the schedule an availability or approval poll is about.
+	Ministry int64  `json:"ministry,omitempty"`
+	Month    string `json:"month,omitempty"`
 }
 
 type DateRange struct {

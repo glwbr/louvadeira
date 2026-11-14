@@ -211,6 +211,9 @@ func (b *Bot) Tick(ctx context.Context) {
 	if now.Hour() >= pendingHour {
 		b.alertPending(ctx, future, now)
 	}
+	if now.Hour() >= reminderHour {
+		b.availabilityRound(ctx, now)
+	}
 }
 
 type personGroup struct {
@@ -467,6 +470,12 @@ func (b *Bot) applyVote(ctx context.Context, vote messenger.Vote) {
 	case isChatPoll(poll.Options):
 		b.answerChatPoll(ctx, person, vote.PollID, chosen)
 		return
+	case hasAction(poll.Options, actionAvailable):
+		b.answerAvailability(ctx, person, vote.PollID, poll.Options, chosen)
+		return
+	case hasAction(poll.Options, actionPublish):
+		b.answerApproval(ctx, person, chosen[len(chosen)-1])
+		return
 	}
 	option := chosen[len(chosen)-1]
 	switch option.Action {
@@ -534,10 +543,40 @@ func (b *Bot) AnnouncePublished(ctx context.Context, ministryID int64, month str
 		b.Log.Error("ler escala para anunciar", "erro", err)
 		return
 	}
-	b.send(ctx, ministry.WhatsAppGroup, Summary(ministry, view))
+	text, marked := summarize(ministry, view, true)
+	b.mention(ctx, ministry.WhatsAppGroup, text, marked...)
 }
 
+/**
+ * NOTE: Summary is the month in the format the team already uses, with plain names, as the leaders preview it.
+ */
 func Summary(ministry store.MinistryDetail, view store.ScheduleView) string {
+	text, _ := summarize(ministry, view, false)
+	return text
+}
+
+/**
+ * NOTE: One line per service with the people in rotation (fixed members are implied), a 🍷 on Lord's Supper days and
+ * the missing roles. With mark, people with a phone are written as mentions and returned to be marked.
+ */
+func summarize(ministry store.MinistryDetail, view store.ScheduleView, mark bool) (string, []store.Person) {
+	phones := map[int64]string{}
+	for _, m := range ministry.Members {
+		phones[m.PersonID] = m.Phone
+	}
+	var marked []store.Person
+	seen := map[int64]bool{}
+	nameOf := func(slot store.ScheduleSlot) string {
+		phone := phones[slot.PersonID]
+		if !mark || phone == "" {
+			return slot.PersonName
+		}
+		if !seen[slot.PersonID] {
+			seen[slot.PersonID] = true
+			marked = append(marked, store.Person{ID: slot.PersonID, Name: slot.PersonName, Phone: phone})
+		}
+		return "@" + phone
+	}
 	fixed := map[int64]map[int64]bool{}
 	for _, m := range ministry.Members {
 		fixed[m.PersonID] = map[int64]bool{}
@@ -559,8 +598,8 @@ func Summary(ministry store.MinistryDetail, view store.ScheduleView) string {
 					switch {
 					case slot.PersonID == 0:
 						missing = append(missing, role.Name)
-					case !fixed[slot.PersonID][role.RoleID] && !contains(names, slot.PersonName):
-						names = append(names, slot.PersonName)
+					case !fixed[slot.PersonID][role.RoleID] && !contains(names, nameOf(slot)):
+						names = append(names, nameOf(slot))
 					}
 				}
 			}
@@ -572,7 +611,7 @@ func Summary(ministry store.MinistryDetail, view store.ScheduleView) string {
 			out.WriteString(line + communionMark(sv.Communion) + "\n")
 		}
 	}
-	return strings.TrimRight(out.String(), "\n")
+	return strings.TrimRight(out.String(), "\n"), marked
 }
 
 /**

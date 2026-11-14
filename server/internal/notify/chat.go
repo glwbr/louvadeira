@@ -217,8 +217,12 @@ func (b *Bot) askAbsence(ctx context.Context, person store.Person, ranges []stor
 }
 
 func isChatPoll(options []store.PollOption) bool {
+	return hasAction(options, actionKeep)
+}
+
+func hasAction(options []store.PollOption, action string) bool {
 	for _, o := range options {
-		if o.Action == actionKeep {
+		if o.Action == action {
 			return true
 		}
 	}
