@@ -69,12 +69,20 @@ type TextFieldProps = {
   label: ReactNode
   hint?: ReactNode
   className?: string
+  /** NOTE: Rewrites what was typed before it is stored, for masks like the phone number. */
+  format?: (value: string) => string
 } & Omit<
   ComponentProps<typeof Input>,
   "id" | "name" | "value" | "onChange" | "onBlur" | "className"
 >
 
-function TextField({ label, hint, className, ...input }: TextFieldProps) {
+function TextField({
+  label,
+  hint,
+  className,
+  format,
+  ...input
+}: TextFieldProps) {
   const field = useFieldContext<string>()
   const error = useFieldError()
   const id = useId()
@@ -91,7 +99,11 @@ function TextField({ label, hint, className, ...input }: TextFieldProps) {
         name={field.name}
         value={field.state.value}
         onBlur={field.handleBlur}
-        onChange={(event) => field.handleChange(event.target.value)}
+        onChange={(event) =>
+          field.handleChange(
+            format ? format(event.target.value) : event.target.value
+          )
+        }
         aria-invalid={Boolean(error)}
         {...input}
       />

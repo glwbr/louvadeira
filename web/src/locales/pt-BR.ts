@@ -29,6 +29,7 @@ export const ptBR = {
     expiredTitle: "Esse link não vale mais",
     expiredLead: "Cada link funciona uma vez só. Digite seu WhatsApp que a gente manda um novo.",
     redeeming: "Entrando…",
+    failedTitle: "Não conseguimos abrir o link",
     phoneLabel: "WhatsApp com DDD",
     phonePlaceholder: "(75) 99999-9999",
     phoneInvalid: "Digite o número com DDD, só os 10 ou 11 dígitos",
