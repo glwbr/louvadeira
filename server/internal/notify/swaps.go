@@ -92,16 +92,18 @@ func (b *Bot) decline(ctx context.Context, assignmentIDs []int64, byMember bool,
 		b.Log.Error("abrir troca", "erro", failure)
 	}
 
-	b.inviteCovers(ctx, swaps, why)
-	for _, s := range swaps {
-		if len(s.invited) == 0 {
-			_ = b.Store.CloseCoverRequest(ctx, s.request, b.now())
+	b.later(ctx, func(ctx context.Context) {
+		b.inviteCovers(ctx, swaps, why)
+		for _, s := range swaps {
+			if len(s.invited) == 0 {
+				_ = b.Store.CloseCoverRequest(ctx, s.request, b.now())
+			}
 		}
-	}
-	b.alertDeclined(ctx, swaps, why)
-	if byMember {
-		b.thankAbsent(ctx, swaps)
-	}
+		b.alertDeclined(ctx, swaps, why)
+		if byMember {
+			b.thankAbsent(ctx, swaps)
+		}
+	})
 
 	requests := make([]store.CoverRequest, 0, len(swaps))
 	for _, s := range swaps {

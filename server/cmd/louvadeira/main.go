@@ -91,11 +91,12 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		}
 		defer wa.Close()
 		deps.WhatsApp = wa
-		deps.Messenger = wa
+		deps.Messenger = messenger.Paced(wa, 2*time.Second, 5*time.Second)
 		if cfg.WhatsAppMode == config.WhatsAppTest {
-			deps.Messenger = messenger.WithAllowlist(wa, addresses(cfg.WhatsAppAllowlist))
+			deps.Messenger = messenger.WithAllowlist(deps.Messenger, addresses(cfg.WhatsAppAllowlist))
 		}
 		bot.Messenger = deps.Messenger
+		bot.Async = func(task func()) { go task() }
 		bot.OwnPhone = wa.OwnPhone
 		wa.OnVote(bot.HandleVote)
 		go keepConnecting(ctx, wa, log)

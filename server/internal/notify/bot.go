@@ -45,6 +45,9 @@ type Bot struct {
 	OwnPhone  func() string
 	// NOTE: Settle waits after a vote before acting, so someone changing their answer in a hurry only counts once.
 	Settle time.Duration
+	// NOTE: Async runs a batch of messages in the background, so a request from the app does not wait out the pauses
+	// between messages. When nil the batch runs inline.
+	Async func(task func())
 
 	mu      sync.Mutex
 	pending map[messenger.MessageID]*time.Timer
@@ -59,6 +62,15 @@ func (b *Bot) now() time.Time {
 		t = t.In(b.Location)
 	}
 	return t
+}
+
+func (b *Bot) later(ctx context.Context, task func(context.Context)) {
+	if b.Async == nil {
+		task(ctx)
+		return
+	}
+	detached := context.WithoutCancel(ctx)
+	b.Async(func() { task(detached) })
 }
 
 func (b *Bot) serviceTime(d store.AssignmentDetail) time.Time {
