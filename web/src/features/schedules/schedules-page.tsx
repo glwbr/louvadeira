@@ -57,6 +57,7 @@ import {
   dayAndTime,
   firstName,
   formatDay,
+  listNames,
   monthBounds,
   monthLabel,
   nextMonth,
@@ -741,15 +742,28 @@ function CoversCard({ covers }: { covers: CoverRequest[] }) {
   )
 }
 
+/**
+ * NOTE: Says where the swap stands now, in the present tense: who cannot go, who stands in, who was asked and said
+ * no, and who has not answered yet.
+ */
 function CoverItem({ cover }: { cover: CoverRequest }) {
   const { t } = useTranslation()
-  const answers = cover.invites.map((invite) =>
-    invite.answer === "no"
-      ? t("schedules.inviteNo", { name: firstName(invite.name) })
-      : invite.answer === "yes"
-        ? t("schedules.inviteYes", { name: firstName(invite.name) })
-        : firstName(invite.name)
-  )
+  const refused = cover.invites.filter((invite) => invite.answer === "no").map((invite) => firstName(invite.name))
+  const waiting = cover.invites.filter((invite) => !invite.answer).map((invite) => firstName(invite.name))
+  const story = [t("schedules.cover.absent", { name: cover.absentName })]
+  if (cover.status === "covered") {
+    story.push(t("schedules.cover.covered", { name: cover.coveredBy }))
+  } else {
+    if (refused.length > 0) {
+      story.push(t("schedules.cover.refused", { names: listNames(refused), count: refused.length }))
+    }
+    if (cover.status === "open" && waiting.length > 0) {
+      story.push(t("schedules.cover.waiting", { names: listNames(waiting) }))
+    }
+    if (cover.invites.length === 0) {
+      story.push(t("schedules.cover.nobody"))
+    }
+  }
   return (
     <AnimatedItem className="flex flex-col gap-1.5 px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -759,12 +773,7 @@ function CoverItem({ cover }: { cover: CoverRequest }) {
         <Badge variant={COVER_BADGE[cover.status]}>{t(`schedules.coverStatus.${cover.status}`)}</Badge>
         {cover.late && <Badge variant="outline">{t("schedules.lateNotice")}</Badge>}
       </div>
-      <p className="text-xs text-pretty text-muted-foreground">
-        {t("schedules.coverAbsent", { name: cover.absentName })}
-        {cover.status === "covered" && ` ${t("schedules.coverCovered", { name: cover.coveredBy })}`}
-        {cover.status !== "covered" && answers.length > 0 && ` ${t("schedules.coverInvited", { names: answers.join(", ") })}`}
-        {cover.status !== "covered" && answers.length === 0 && ` ${t("schedules.coverNobody")}`}
-      </p>
+      <p className="text-xs text-pretty text-muted-foreground">{story.join(" ")}</p>
     </AnimatedItem>
   )
 }

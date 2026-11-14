@@ -275,3 +275,12 @@ export function maskPhone(input: string): string {
 export function phoneDigits(input: string): string {
   return input.replace(/\D/g, "")
 }
+
+const names = new Intl.ListFormat(LOCALE, { style: "long", type: "conjunction" })
+
+/**
+ * NOTE: "Ana", "Ana e Bia", "Ana, Bia e Caio".
+ */
+export function listNames(list: string[]): string {
+  return names.format(list)
+}
