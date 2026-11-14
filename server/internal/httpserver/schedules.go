@@ -103,8 +103,12 @@ func (d Deps) declineAssignment(w http.ResponseWriter, r *http.Request) {
 		d.fail(w, err)
 		return
 	}
-	request, err := d.Bot.Decline(r.Context(), assignmentID, false)
-	d.respond(w, http.StatusOK, request, err)
+	requests, err := d.Bot.Decline(r.Context(), []int64{assignmentID}, false)
+	if err != nil {
+		d.fail(w, err)
+		return
+	}
+	d.respond(w, http.StatusOK, requests[0], nil)
 }
 
 func (d Deps) listCovers(w http.ResponseWriter, r *http.Request) {
@@ -137,7 +141,36 @@ func (d Deps) listUnavailabilities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	list, err := d.Store.ListUnavailabilities(r.Context(), from, to)
-	d.respond(w, http.StatusOK, list, err)
+	if err != nil {
+		d.fail(w, err)
+		return
+	}
+	views := make([]unavailabilityView, len(list))
+	for i, u := range list {
+		if views[i], err = d.viewUnavailability(r.Context(), u); err != nil {
+			d.fail(w, err)
+			return
+		}
+	}
+	d.respond(w, http.StatusOK, views, nil)
+}
+
+/**
+ * NOTE: Scheduled counts the slots the person still holds during the absence, so the leader can open swaps for them.
+ */
+type unavailabilityView struct {
+	store.Unavailability
+	Scheduled int `json:"scheduled"`
+}
+
+func (d Deps) viewUnavailability(ctx context.Context, u store.Unavailability) (unavailabilityView, error) {
+	view := unavailabilityView{Unavailability: u}
+	if d.Bot == nil {
+		return view, nil
+	}
+	slots, err := d.Bot.AffectedBy(ctx, u)
+	view.Scheduled = len(slots)
+	return view, err
 }
 
 var datePattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
@@ -148,7 +181,62 @@ func (d Deps) createUnavailability(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u, err := d.Store.CreateUnavailability(r.Context(), in)
-	d.respond(w, http.StatusCreated, u, err)
+	if err != nil {
+		d.fail(w, err)
+		return
+	}
+	view, err := d.viewUnavailability(r.Context(), u)
+	d.respond(w, http.StatusCreated, view, err)
+}
+
+type affectedSlot struct {
+	AssignmentID int64  `json:"assignmentId"`
+	MinistryID   int64  `json:"ministryId"`
+	MinistryName string `json:"ministryName"`
+	Date         string `json:"date"`
+	StartTime    string `json:"startTime"`
+	ServiceName  string `json:"serviceName"`
+	RoleName     string `json:"roleName"`
+	Status       string `json:"status"`
+}
+
+func (d Deps) unavailabilityAssignments(w http.ResponseWriter, r *http.Request) {
+	u, ok := d.unavailability(w, r)
+	if !ok {
+		return
+	}
+	slots, err := d.Bot.AffectedBy(r.Context(), u)
+	list := make([]affectedSlot, len(slots))
+	for i, s := range slots {
+		list[i] = affectedSlot{s.AssignmentID, s.MinistryID, s.MinistryName, s.Date, s.StartTime, s.ServiceName, s.RoleName, s.Status}
+	}
+	d.respond(w, http.StatusOK, list, err)
+}
+
+func (d Deps) openUnavailabilityCovers(w http.ResponseWriter, r *http.Request) {
+	u, ok := d.unavailability(w, r)
+	if !ok {
+		return
+	}
+	requests, err := d.Bot.DeclinePeriod(r.Context(), u)
+	d.respond(w, http.StatusOK, requests, err)
+}
+
+func (d Deps) unavailability(w http.ResponseWriter, r *http.Request) (store.Unavailability, bool) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return store.Unavailability{}, false
+	}
+	if d.Bot == nil {
+		writeError(w, http.StatusServiceUnavailable, "trocas indisponíveis")
+		return store.Unavailability{}, false
+	}
+	u, err := d.Store.Unavailability(r.Context(), id)
+	if err != nil {
+		d.fail(w, err)
+		return store.Unavailability{}, false
+	}
+	return u, true
 }
 
 func (d Deps) deleteUnavailability(w http.ResponseWriter, r *http.Request) {

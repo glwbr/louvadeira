@@ -86,15 +86,11 @@ func (b *Bot) send(ctx context.Context, to string, text string) bool {
 	return true
 }
 
-func (b *Bot) sendPoll(ctx context.Context, kind string, person store.Person, question string, options []store.PollOption) bool {
+func (b *Bot) sendPoll(ctx context.Context, kind string, person store.Person, question string, options []store.PollOption, multiple bool) bool {
 	if person.Phone == "" || b.Messenger == nil {
 		return false
 	}
-	labels := make([]string, len(options))
-	for i, option := range options {
-		labels[i] = option.Label
-	}
-	id, err := b.Messenger.SendPoll(ctx, messenger.Address(person.Phone), question, labels)
+	id, err := b.Messenger.SendPoll(ctx, messenger.Address(person.Phone), messenger.Poll{Question: question, Options: labelsOf(options), Multiple: multiple})
 	if err != nil {
 		b.logSendError(person.Phone, err)
 		return false
@@ -103,6 +99,14 @@ func (b *Bot) sendPoll(ctx context.Context, kind string, person store.Person, qu
 		b.Log.Error("guardar enquete", "erro", err)
 	}
 	return true
+}
+
+func labelsOf(options []store.PollOption) []string {
+	labels := make([]string, len(options))
+	for i, option := range options {
+		labels[i] = option.Label
+	}
+	return labels
 }
 
 func (b *Bot) logSendError(to string, err error) {
@@ -259,7 +263,7 @@ func (b *Bot) askConfirmation(ctx context.Context, slots []store.AssignmentDetai
 		}
 		options = append(options, store.PollOption{Label: optionNone, Action: actionDecline, Assignments: all})
 	}
-	return b.sendPoll(ctx, store.PollConfirm, store.Person{ID: first.PersonID, Name: first.PersonName, Phone: first.Phone}, question, options)
+	return b.sendPoll(ctx, store.PollConfirm, store.Person{ID: first.PersonID, Name: first.PersonName, Phone: first.Phone}, question, options, false)
 }
 
 func (b *Bot) sendReminders(ctx context.Context, upcoming []store.AssignmentDetail, tomorrow string) {
@@ -379,25 +383,24 @@ func (b *Bot) applyVote(ctx context.Context, vote messenger.Vote) {
 	if err != nil {
 		return
 	}
-	var chosen *store.PollOption
-	var labels []string
-	for i := range poll.Options {
+	var chosen []store.PollOption
+	for _, option := range poll.Options {
 		for _, hash := range vote.Selected {
-			if bytes.Equal(hash, messenger.OptionHash(poll.Options[i].Label)) {
-				chosen = &poll.Options[i]
-				labels = append(labels, poll.Options[i].Label)
+			if bytes.Equal(hash, messenger.OptionHash(option.Label)) {
+				chosen = append(chosen, option)
+				break
 			}
 		}
 	}
+	choice := strings.Join(labelsOf(chosen), ", ")
 	if poll.Kind == store.PollTest {
-		choice := strings.Join(labels, ", ")
 		if choice == "" {
 			choice = "(voto retirado)"
 		}
 		b.Log.Info("voto na enquete de teste", "quem", vote.Sender, "escolha", choice, "do próprio celular", vote.FromMe)
 		return
 	}
-	if chosen == nil {
+	if len(chosen) == 0 {
 		return
 	}
 	person, ok := b.person(ctx, poll.PersonID)
@@ -407,96 +410,32 @@ func (b *Bot) applyVote(ctx context.Context, vote messenger.Vote) {
 	if vote.FromMe && (b.OwnPhone == nil || phone.Canonical(b.OwnPhone()) != person.Phone) {
 		return
 	}
-	b.Log.Info("voto recebido", "enquete", poll.Kind, "pessoa", person.Name, "escolha", chosen.Label)
+	b.Log.Info("voto recebido", "enquete", poll.Kind, "pessoa", person.Name, "escolha", choice)
 
-	switch chosen.Action {
+	if poll.Kind == store.PollCover {
+		b.answerCover(ctx, person, poll.Options, chosen)
+		return
+	}
+	option := chosen[len(chosen)-1]
+	switch option.Action {
 	case actionConfirm:
-		b.confirm(ctx, person, chosen.Assignments)
+		b.confirm(ctx, person, option.Assignments)
 	case actionDecline:
-		for _, id := range chosen.Assignments {
+		var ids []int64
+		for _, id := range option.Assignments {
 			d, err := b.Store.AssignmentDetail(ctx, id)
 			if err != nil || d.PersonID != person.ID || d.Status == store.AssignmentDeclined {
 				continue
 			}
-			if _, err := b.Decline(ctx, id, true); err != nil {
-				b.Log.Error("registrar ausência", "erro", err)
-			}
+			ids = append(ids, id)
 		}
-	case actionAccept:
-		b.accept(ctx, chosen.Request, person)
-	case actionRefuse:
-		b.refuse(ctx, chosen.Request, person)
-	}
-}
-
-/**
- * NOTE: Decline opens a swap for the slot: everyone who can cover gets an invitation at once and the first to accept
- * takes the slot. Leaders always hear about it; under 72h it is flagged as a late notice.
- */
-func (b *Bot) Decline(ctx context.Context, assignmentID int64, byMember bool) (store.CoverRequest, error) {
-	d, err := b.Store.AssignmentDetail(ctx, assignmentID)
-	if err != nil {
-		return store.CoverRequest{}, err
-	}
-	late := b.serviceTime(d).Sub(b.now()) < lateNotice
-	requestID, err := b.Store.OpenCoverRequest(ctx, assignmentID, late, b.now())
-	if err != nil {
-		return store.CoverRequest{}, err
-	}
-	candidates, err := b.Store.CoverCandidates(ctx, assignmentID)
-	if err != nil {
-		return store.CoverRequest{}, err
-	}
-
-	var invited, blocked []string
-	for _, candidate := range candidates {
-		question := fmt.Sprintf("Paz, %s! %s não poderá servir no %s em %s (%s). Você pode cobrir?",
-			firstName(candidate.Name), d.PersonName, d.MinistryName, when(d), d.RoleName)
-		options := []store.PollOption{
-			{Label: optionAccept, Action: actionAccept, Request: requestID},
-			{Label: optionRefuse, Action: actionRefuse, Request: requestID},
+		if len(ids) == 0 {
+			return
 		}
-		if !b.allows(candidate.Phone) {
-			blocked = append(blocked, candidate.Name)
-			continue
+		if _, err := b.Decline(ctx, ids, true); err != nil {
+			b.Log.Error("registrar ausência", "erro", err)
 		}
-		if !b.sendPoll(ctx, store.PollCover, candidate, question, options) {
-			continue
-		}
-		if err := b.Store.AddCoverInvite(ctx, requestID, candidate.ID); err != nil {
-			b.Log.Error("registrar convite", "erro", err)
-			continue
-		}
-		invited = append(invited, candidate.Name)
 	}
-	if len(invited) == 0 {
-		_ = b.Store.CloseCoverRequest(ctx, requestID, b.now())
-	}
-
-	alert := fmt.Sprintf("⚠️ %s não pode servir em %s (%s, %s).", d.PersonName, when(d), d.RoleName, d.MinistryName)
-	if late {
-		alert += " Aviso com menos de 72h."
-	}
-	if len(invited) > 0 {
-		alert += " Convidei para cobrir: " + joinNames(invited) + "."
-	} else {
-		alert += " Ninguém da equipe está livre para cobrir; a vaga precisa de você."
-	}
-	if len(blocked) > 0 {
-		alert += " (Modo de teste não deixou convidar: " + joinNames(blocked) + ".)"
-	}
-	b.tellLeaders(ctx, d.MinistryID, alert)
-
-	if byMember {
-		reply := fmt.Sprintf("Tudo bem, %s. Já avisei a liderança", firstName(d.PersonName))
-		if len(invited) > 0 {
-			reply += " e chamei " + joinNames(invited) + " para cobrir"
-		}
-		b.send(ctx, d.Phone, reply+". Obrigado por avisar!")
-	}
-
-	result, err := b.Store.CoverRequestResult(ctx, requestID)
-	return result.Request, err
 }
 
 func (b *Bot) confirm(ctx context.Context, person store.Person, assignments []int64) {
@@ -541,52 +480,6 @@ func containsID(list []int64, id int64) bool {
 		}
 	}
 	return false
-}
-
-func (b *Bot) accept(ctx context.Context, requestID int64, substitute store.Person) {
-	result, err := b.Store.AcceptCover(ctx, requestID, substitute.ID, b.now())
-	if errors.Is(err, store.ErrCoverClosed) {
-		b.send(ctx, substitute.Phone, "Obrigado! Essa vaga já foi resolvida 🙏")
-		return
-	}
-	if err != nil {
-		b.Log.Error("aceitar troca", "erro", err)
-		return
-	}
-	d := result.Assignment
-	b.send(ctx, substitute.Phone, fmt.Sprintf("Valeu, %s! 🙏 Você está na escala de %s — %s.", firstName(substitute.Name), when(d), d.RoleName))
-	b.send(ctx, result.Absent.Phone, fmt.Sprintf("%s vai cobrir você em %s (%s). Obrigado por avisar!", substitute.Name, when(d), d.RoleName))
-	for _, waiting := range result.Waiting {
-		b.send(ctx, waiting.Phone, fmt.Sprintf("A vaga de %s (%s) já foi coberta por %s. Obrigado!", when(d), d.RoleName, substitute.Name))
-	}
-	swap := fmt.Sprintf("🔄 Troca no %s: %s cobre %s em %s (%s).", d.MinistryName, substitute.Name, result.Absent.Name, when(d), d.RoleName)
-	b.tellLeaders(ctx, d.MinistryID, swap)
-	if d.WhatsAppGroup != "" {
-		b.send(ctx, d.WhatsAppGroup, swap)
-	}
-}
-
-func (b *Bot) refuse(ctx context.Context, requestID int64, person store.Person) {
-	everyone, err := b.Store.RefuseCover(ctx, requestID, person.ID, b.now())
-	if errors.Is(err, store.ErrCoverClosed) {
-		return
-	}
-	if err != nil {
-		b.Log.Error("recusar troca", "erro", err)
-		return
-	}
-	b.send(ctx, person.Phone, "Tudo bem, obrigado por responder!")
-	if !everyone {
-		return
-	}
-	_ = b.Store.CloseCoverRequest(ctx, requestID, b.now())
-	result, err := b.Store.CoverRequestResult(ctx, requestID)
-	if err != nil {
-		return
-	}
-	d := result.Assignment
-	b.tellLeaders(ctx, d.MinistryID, fmt.Sprintf("❗ Ninguém pôde cobrir %s em %s (%s, %s). A vaga precisa de você.",
-		result.Absent.Name, when(d), d.RoleName, d.MinistryName))
 }
 
 /**
@@ -657,12 +550,8 @@ func (b *Bot) SendTestPoll(ctx context.Context, to messenger.Address) (messenger
 		{Label: optionDecline + " domingo", Action: actionTestPoll},
 		{Label: optionNone, Action: actionTestPoll},
 	}
-	labels := make([]string, len(options))
-	for i, option := range options {
-		labels[i] = option.Label
-	}
 	question := "Teste da louvadeira 🎶 Imagine que esta é a confirmação da escala da semana. Vote, depois mude o voto e depois retire o voto."
-	id, err := b.Messenger.SendPoll(ctx, to, question, labels)
+	id, err := b.Messenger.SendPoll(ctx, to, messenger.Poll{Question: question, Options: labelsOf(options)})
 	if err != nil {
 		return "", err
 	}

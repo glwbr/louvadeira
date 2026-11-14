@@ -89,3 +89,30 @@ func communionMark(communion bool) string {
 	}
 	return ""
 }
+
+func slotText(d store.AssignmentDetail) string {
+	return fmt.Sprintf("%s (%s)", when(d), d.RoleName)
+}
+
+/**
+ * NOTE: "de 16/11 a 13/12", or "em 19/11" for a single day; it follows "não poderá servir no Louvor".
+ */
+func periodText(start, end string) string {
+	if start == end {
+		return "em " + dayMonth(start)
+	}
+	return fmt.Sprintf("de %s a %s", dayMonth(start), dayMonth(end))
+}
+
+var reasonLabels = map[store.Reason]string{
+	store.ReasonTravel:  "viagem",
+	store.ReasonWork:    "trabalho",
+	store.ReasonHealth:  "saúde",
+	store.ReasonFamily:  "família",
+	store.ReasonStudies: "estudos",
+	store.ReasonOther:   "outro motivo",
+}
+
+func reasonLabel(r store.Reason) string {
+	return reasonLabels[r]
+}

@@ -44,7 +44,7 @@ func (f *fakeMessenger) SendText(context.Context, messenger.Address, string) (me
 	return "", nil
 }
 
-func (f *fakeMessenger) SendPoll(_ context.Context, to messenger.Address, _ string, _ []string) (messenger.MessageID, error) {
+func (f *fakeMessenger) SendPoll(_ context.Context, to messenger.Address, _ messenger.Poll) (messenger.MessageID, error) {
 	f.polls = append(f.polls, to)
 	return "poll-1", nil
 }
@@ -420,5 +420,51 @@ func TestDeclineFromTheAppOpensASwap(t *testing.T) {
 	}
 	if len(h.polls.polls) != 1 {
 		t.Fatalf("invites sent = %v", h.polls.polls)
+	}
+}
+
+func TestAbsenceOffersSwapsForTheWholePeriod(t *testing.T) {
+	h := newHarness(t)
+	h.signInAdmin()
+	ctx := context.Background()
+	ministry, _ := h.store.CreateMinistry(ctx, store.MinistryInput{Name: "Louvor"})
+	role, _ := h.store.CreateRole(ctx, ministry.ID, store.RoleInput{Name: "Baixo", Slots: 1})
+	service, _ := h.store.CreateService(ctx, store.ServiceInput{Name: "Quinta", Weekday: 4, StartTime: "19:30"})
+	_ = h.store.SetMinistryServices(ctx, ministry.ID, []int64{service.ID})
+	for _, name := range []string{"Edu", "Fred"} {
+		p, _ := h.store.CreatePerson(ctx, store.PersonInput{Name: name, Phone: "+55 11 9" + map[string]string{"Edu": "1111-1111", "Fred": "2222-2222"}[name]})
+		_ = h.store.PutMember(ctx, ministry.ID, p.ID, store.MemberInput{Roles: []store.MemberRole{{RoleID: role.ID}}})
+	}
+	base := fmt.Sprintf("/api/ministries/%d/schedules/2026-12", ministry.ID)
+	view := decode[store.ScheduleView](t, h.do(http.MethodPost, base+"/generate", ""))
+	h.do(http.MethodPost, base+"/publish", "")
+	absent := view.Weeks[0].Services[0].Roles[0].Slots[0]
+
+	rec := h.do(http.MethodPost, "/api/unavailabilities",
+		fmt.Sprintf(`{"personId":%d,"startDate":"2026-12-01","endDate":"2026-12-31","reason":"viagem"}`, absent.PersonID))
+	created := decode[struct {
+		ID        int64 `json:"id"`
+		Scheduled int   `json:"scheduled"`
+	}](t, rec)
+	if created.Scheduled < 2 {
+		t.Fatalf("scheduled = %d, want every December Thursday of %s", created.Scheduled, absent.PersonName)
+	}
+	slots := decode[[]map[string]any](t, h.do(http.MethodGet, fmt.Sprintf("/api/unavailabilities/%d/assignments", created.ID), ""))
+	if len(slots) != created.Scheduled {
+		t.Fatalf("assignments = %v", slots)
+	}
+
+	requests := decode[[]store.CoverRequest](t, h.do(http.MethodPost, fmt.Sprintf("/api/unavailabilities/%d/covers", created.ID), ""))
+	if len(requests) != created.Scheduled {
+		t.Fatalf("requests = %+v", requests)
+	}
+	if len(h.polls.polls) != 1 {
+		t.Fatalf("the other bassist should get one invite for every Thursday, got %v", h.polls.polls)
+	}
+	list := decode[[]struct {
+		Scheduled int `json:"scheduled"`
+	}](t, h.do(http.MethodGet, "/api/unavailabilities?from=2026-12-01&to=2026-12-31", ""))
+	if len(list) != 1 || list[0].Scheduled != 0 {
+		t.Fatalf("after opening swaps the absence still lists %+v", list)
 	}
 }

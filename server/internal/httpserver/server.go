@@ -96,6 +96,8 @@ func New(d Deps) http.Handler {
 	admin("GET /api/unavailabilities", d.listUnavailabilities)
 	admin("POST /api/unavailabilities", d.createUnavailability)
 	admin("DELETE /api/unavailabilities/{id}", d.deleteUnavailability)
+	admin("GET /api/unavailabilities/{id}/assignments", d.unavailabilityAssignments)
+	admin("POST /api/unavailabilities/{id}/covers", d.openUnavailabilityCovers)
 
 	admin("GET /api/admin/whatsapp/groups", d.groups)
 	admin("GET /api/admin/whatsapp/groups/{group}/participants", d.groupParticipants)

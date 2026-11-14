@@ -247,12 +247,17 @@ func (c *Client) SendText(ctx context.Context, to messenger.Address, text string
 	return messenger.MessageID(resp.ID), nil
 }
 
-func (c *Client) SendPoll(ctx context.Context, to messenger.Address, question string, options []string) (messenger.MessageID, error) {
+func (c *Client) SendPoll(ctx context.Context, to messenger.Address, poll messenger.Poll) (messenger.MessageID, error) {
 	jid, err := c.resolve(ctx, to)
 	if err != nil {
 		return "", err
 	}
-	resp, err := c.wm.SendMessage(ctx, jid, c.wm.BuildPollCreation(question, options, 1))
+	// NOTE: WhatsApp reads a selectable count of 0 as "any number of options".
+	selectable := 1
+	if poll.Multiple {
+		selectable = 0
+	}
+	resp, err := c.wm.SendMessage(ctx, jid, c.wm.BuildPollCreation(poll.Question, poll.Options, selectable))
 	if err != nil {
 		return "", fmt.Errorf("enviar enquete: %w", err)
 	}

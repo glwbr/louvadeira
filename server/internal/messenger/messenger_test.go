@@ -17,7 +17,7 @@ func (r *recorder) SendText(_ context.Context, to messenger.Address, _ string) (
 	return "text-id", nil
 }
 
-func (r *recorder) SendPoll(_ context.Context, to messenger.Address, _ string, _ []string) (messenger.MessageID, error) {
+func (r *recorder) SendPoll(_ context.Context, to messenger.Address, _ messenger.Poll) (messenger.MessageID, error) {
 	r.sent = append(r.sent, to)
 	return "poll-id", nil
 }
@@ -45,7 +45,7 @@ func TestAllowlistBlocksAddressesOutsideTheList(t *testing.T) {
 	if !errors.Is(err, messenger.ErrNotAllowed) {
 		t.Fatalf("SendText to an unlisted number: err = %v, want ErrNotAllowed", err)
 	}
-	_, err = guarded.SendPoll(context.Background(), "999@g.us", "Confirma?", []string{"Sim", "Não"})
+	_, err = guarded.SendPoll(context.Background(), "999@g.us", messenger.Poll{Question: "Confirma?", Options: []string{"Sim", "Não"}})
 	if !errors.Is(err, messenger.ErrNotAllowed) {
 		t.Fatalf("SendPoll to an unlisted group: err = %v, want ErrNotAllowed", err)
 	}
@@ -61,7 +61,7 @@ func TestAllowlistPassesListedAddressesInAnyFormat(t *testing.T) {
 	if _, err := guarded.SendText(context.Background(), "5511988887777", "oi"); err != nil {
 		t.Fatalf("SendText to a listed number: %v", err)
 	}
-	if _, err := guarded.SendPoll(context.Background(), "120363000000000000@G.US", "Confirma?", []string{"Sim", "Não"}); err != nil {
+	if _, err := guarded.SendPoll(context.Background(), "120363000000000000@G.US", messenger.Poll{Question: "Confirma?", Options: []string{"Sim", "Não"}}); err != nil {
 		t.Fatalf("SendPoll to a listed group: %v", err)
 	}
 	if len(next.sent) != 2 {

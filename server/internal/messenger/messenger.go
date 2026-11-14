@@ -19,9 +19,18 @@ type Address string
 
 type MessageID string
 
+/**
+ * NOTE: A Poll lets people answer by tapping. With Multiple they can tick any number of options; otherwise one.
+ */
+type Poll struct {
+	Question string
+	Options  []string
+	Multiple bool
+}
+
 type Messenger interface {
 	SendText(ctx context.Context, to Address, text string) (MessageID, error)
-	SendPoll(ctx context.Context, to Address, question string, options []string) (MessageID, error)
+	SendPoll(ctx context.Context, to Address, poll Poll) (MessageID, error)
 }
 
 var ErrNotAllowed = errors.New("destino fora da lista de permissão do modo de teste")
@@ -96,11 +105,11 @@ func (g allowlisted) SendText(ctx context.Context, to Address, text string) (Mes
 	return g.next.SendText(ctx, to, text)
 }
 
-func (g allowlisted) SendPoll(ctx context.Context, to Address, question string, options []string) (MessageID, error) {
+func (g allowlisted) SendPoll(ctx context.Context, to Address, poll Poll) (MessageID, error) {
 	if err := g.check(to); err != nil {
 		return "", err
 	}
-	return g.next.SendPoll(ctx, to, question, options)
+	return g.next.SendPoll(ctx, to, poll)
 }
 
 func (g allowlisted) allows(to Address) bool {

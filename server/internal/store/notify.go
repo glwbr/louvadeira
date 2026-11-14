@@ -101,6 +101,29 @@ func (s *Store) UpcomingAssignments(ctx context.Context, from, to string) ([]Ass
 }
 
 /**
+ * NOTE: Slots a person still holds in published schedules with a service date in [from, to], leaving out the ones
+ * they already said they cannot serve.
+ */
+func (s *Store) PersonAssignments(ctx context.Context, personID int64, from, to string) ([]AssignmentDetail, error) {
+	rows, err := s.db.QueryContext(ctx, assignmentDetailQuery+`
+		WHERE sc.status = 'published' AND a.person_id = ? AND a.status != 'declined' AND a.service_date BETWEEN ? AND ?
+		ORDER BY a.service_date, sv.start_time, r.position, a.slot`, personID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var list []AssignmentDetail
+	for rows.Next() {
+		d, err := scanAssignmentDetail(rows)
+		if err != nil {
+			return nil, err
+		}
+		list = append(list, d)
+	}
+	return list, rows.Err()
+}
+
+/**
  * NOTE: Returns true only the first time a key is marked, so callers send each scheduled message once.
  */
 func (s *Store) MarkNotified(ctx context.Context, key string, now time.Time) (bool, error) {
@@ -154,6 +177,8 @@ type PollOption struct {
 	Action      string  `json:"action"`
 	Assignments []int64 `json:"assignments,omitempty"`
 	Request     int64   `json:"request,omitempty"`
+	// NOTE: Requests is set on an option that answers several swaps at once ("não posso em nenhum").
+	Requests []int64 `json:"requests,omitempty"`
 }
 
 type Poll struct {

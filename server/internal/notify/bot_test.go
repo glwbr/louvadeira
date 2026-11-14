@@ -18,10 +18,11 @@ import (
 )
 
 type message struct {
-	id      string
-	to      string
-	text    string
-	options []string
+	id       string
+	to       string
+	text     string
+	options  []string
+	multiple bool
 }
 
 type fakeMessenger struct {
@@ -36,10 +37,10 @@ func (f *fakeMessenger) SendText(_ context.Context, to messenger.Address, text s
 	return messenger.MessageID(id), nil
 }
 
-func (f *fakeMessenger) SendPoll(_ context.Context, to messenger.Address, question string, options []string) (messenger.MessageID, error) {
+func (f *fakeMessenger) SendPoll(_ context.Context, to messenger.Address, poll messenger.Poll) (messenger.MessageID, error) {
 	f.next++
 	id := fmt.Sprintf("poll-%d", f.next)
-	f.sent = append(f.sent, message{id: id, to: string(to), text: question, options: options})
+	f.sent = append(f.sent, message{id: id, to: string(to), text: poll.Question, options: poll.Options, multiple: poll.Multiple})
 	return messenger.MessageID(id), nil
 }
 
@@ -167,13 +168,26 @@ func (w *world) slotOf(date, role string) store.ScheduleSlot {
 
 func (w *world) vote(poll message, option string, fromMe bool) {
 	w.t.Helper()
-	for _, label := range poll.options {
-		if label == option {
-			w.bot.HandleVote(context.Background(), messenger.Vote{PollID: messenger.MessageID(poll.id), Selected: [][]byte{messenger.OptionHash(label)}, FromMe: fromMe})
-			return
+	w.tick(poll, fromMe, option)
+}
+
+/**
+ * NOTE: tick sends the whole current selection of a poll, the way WhatsApp reports every change of a vote.
+ */
+func (w *world) tick(poll message, fromMe bool, options ...string) {
+	w.t.Helper()
+	var selected [][]byte
+	for _, option := range options {
+		found := false
+		for _, label := range poll.options {
+			found = found || label == option
 		}
+		if !found {
+			w.t.Fatalf("poll %q has no option %q (options %v)", poll.text, option, poll.options)
+		}
+		selected = append(selected, messenger.OptionHash(option))
 	}
-	w.t.Fatalf("poll %q has no option %q (options %v)", poll.text, option, poll.options)
+	w.bot.HandleVote(context.Background(), messenger.Vote{PollID: messenger.MessageID(poll.id), Selected: selected, FromMe: fromMe})
 }
 
 func lastPoll(t *testing.T, messages []message) message {
@@ -275,8 +289,8 @@ func TestDeclineInvitesTheOtherBassistAndTheFirstAcceptanceTakesTheSlot(t *testi
 
 	w.fake.reset()
 	w.vote(invite, "✅ Posso cobrir", false)
-	if !containsText(w.fake.to(w.phone(substitute)), "já foi resolvida") {
-		t.Fatalf("second acceptance = %+v", w.fake.sent)
+	if len(w.fake.sent) != 0 {
+		t.Fatalf("voting again for a slot already taken sent %+v", w.fake.sent)
 	}
 }
 

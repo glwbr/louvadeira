@@ -106,6 +106,15 @@ func (s *Store) CreateUnavailability(ctx context.Context, in UnavailabilityInput
 	return u, notFoundIfNoRows(err)
 }
 
+func (s *Store) Unavailability(ctx context.Context, id int64) (Unavailability, error) {
+	var u Unavailability
+	err := s.db.QueryRowContext(ctx, `
+		SELECT u.id, u.person_id, p.name, u.start_date, u.end_date, u.reason
+		FROM unavailabilities u JOIN people p ON p.id = u.person_id WHERE u.id = ?`, id).
+		Scan(&u.ID, &u.PersonID, &u.PersonName, &u.StartDate, &u.EndDate, &u.Reason)
+	return u, notFoundIfNoRows(err)
+}
+
 func (s *Store) DeleteUnavailability(ctx context.Context, id int64) error {
 	return requireAffected(s.db.ExecContext(ctx, "DELETE FROM unavailabilities WHERE id = ?", id))
 }
