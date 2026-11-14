@@ -1,0 +1,113 @@
+package notify_test
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"louvadeira/internal/messenger"
+	"louvadeira/internal/store"
+)
+
+func (w *world) says(name, text string) {
+	w.bot.HandleText(context.Background(), messenger.Incoming{From: messenger.Address(w.phone(name)), Text: text})
+}
+
+func TestOnlyCommandsFromTheTeamGetAnAnswer(t *testing.T) {
+	w := newWorld(t)
+	w.bot.HandleText(context.Background(), messenger.Incoming{From: "5511977776666", Text: "escala"})
+	w.says("Ana", "Oi, tudo bem? Que horas é o ensaio?")
+	if len(w.fake.sent) != 0 {
+		t.Fatalf("answered outside the commands: %+v", w.fake.sent)
+	}
+
+	bassist := w.slotOf("2026-11-19", "Baixo").PersonName
+	w.says(bassist, "Escala")
+	replies := w.fake.to(w.phone(bassist))
+	if len(replies) != 1 || !strings.Contains(replies[0].text, "Suas próximas escalas") ||
+		!strings.Contains(replies[0].text, "• Quinta, 19/11, às 19h30 — Baixo · falta confirmar") {
+		t.Fatalf("schedule reply = %+v", replies)
+	}
+}
+
+func TestCannotOnADayAsksFirstAndThenFindsASubstitute(t *testing.T) {
+	w := newWorld(t)
+	bassist := w.slotOf("2026-11-19", "Baixo").PersonName
+	other := map[string]string{"Edu": "Fred", "Fred": "Edu"}[bassist]
+
+	w.says(bassist, "Não posso dia 19")
+	poll := lastPoll(t, w.fake.to(w.phone(bassist)))
+	if !strings.Contains(poll.text, "você não vai poder em 19/11?") || !strings.Contains(poll.text, "• Quinta, 19/11, às 19h30 — Baixo") {
+		t.Fatalf("question = %q", poll.text)
+	}
+	if slot := w.slotOf("2026-11-19", "Baixo"); slot.Status != store.AssignmentScheduled {
+		t.Fatalf("changed before the answer: %+v", slot)
+	}
+
+	w.fake.reset()
+	w.vote(poll, "😕 Isso, pode avisar", false)
+	if slot := w.slotOf("2026-11-19", "Baixo"); slot.Status != store.AssignmentDeclined || !slot.CoverOpen {
+		t.Fatalf("slot = %+v", slot)
+	}
+	if len(polls(w.fake.to(w.phone(other)))) != 1 || !containsText(w.fake.to(w.phone(bassist)), "chamei "+other) {
+		t.Fatalf("messages = %+v", w.fake.sent)
+	}
+	absences, _ := w.store.ListUnavailabilities(context.Background(), "2026-11-19", "2026-11-19")
+	if len(absences) != 1 || absences[0].PersonName != bassist {
+		t.Fatalf("absences = %+v", absences)
+	}
+
+	w.fake.reset()
+	w.vote(poll, "✅ Me enganei", false)
+	if !containsText(w.fake.to(w.phone(bassist)), "já tinha avisado") {
+		t.Fatalf("late change of mind = %+v", w.fake.sent)
+	}
+}
+
+func TestAMistakeChangesNothing(t *testing.T) {
+	w := newWorld(t)
+	bassist := w.slotOf("2026-11-19", "Baixo").PersonName
+	w.says(bassist, "não posso quinta")
+	poll := lastPoll(t, w.fake.sent)
+	w.fake.reset()
+	w.vote(poll, "✅ Me enganei", false)
+	if slot := w.slotOf("2026-11-19", "Baixo"); slot.Status != store.AssignmentScheduled {
+		t.Fatalf("slot = %+v", slot)
+	}
+	if !containsText(w.fake.sent, "nada mudou") {
+		t.Fatalf("reply = %+v", w.fake.sent)
+	}
+	if absences, _ := w.store.ListUnavailabilities(context.Background(), "2026-11-01", "2026-11-30"); len(absences) != 0 {
+		t.Fatalf("absences = %+v", absences)
+	}
+}
+
+func TestCannotWithoutADateAsksWhichService(t *testing.T) {
+	w := newWorld(t)
+	bassist := w.slotOf("2026-11-19", "Baixo").PersonName
+	w.says(bassist, "não posso")
+	poll := lastPoll(t, w.fake.to(w.phone(bassist)))
+	if !poll.multiple || !strings.Contains(strings.Join(poll.options, "|"), "😕 Quinta, 19/11|😕 Domingo, 22/11") ||
+		poll.options[len(poll.options)-1] != "✅ Me enganei, vou em todos" {
+		t.Fatalf("poll = %+v", poll)
+	}
+	w.vote(poll, "😕 Domingo, 22/11", false)
+	if slot := w.slotOf("2026-11-22", "Baixo"); slot.Status != store.AssignmentDeclined {
+		t.Fatalf("sunday = %+v", slot)
+	}
+	if slot := w.slotOf("2026-11-19", "Baixo"); slot.Status != store.AssignmentScheduled {
+		t.Fatalf("thursday = %+v", slot)
+	}
+}
+
+func TestAnAbsenceWithoutServicesIsNotedForTheLeaders(t *testing.T) {
+	w := newWorld(t)
+	w.says("Ana", "não vou poder de 10/12 a 20/12")
+	w.vote(lastPoll(t, w.fake.to(w.phone("Ana"))), "😕 Isso, pode avisar", false)
+	if !containsText(w.fake.to(w.phone("Ana")), "Anotado, Ana! A gente não coloca você na escala de 10/12 a 20/12") {
+		t.Fatalf("ana = %+v", w.fake.to(w.phone("Ana")))
+	}
+	if !containsText(w.fake.to(w.phone("Líder")), "📅 Ana avisou que não vai poder de 10/12 a 20/12.") {
+		t.Fatalf("leader = %+v", w.fake.to(w.phone("Líder")))
+	}
+}

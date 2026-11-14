@@ -179,6 +179,13 @@ type PollOption struct {
 	Request     int64   `json:"request,omitempty"`
 	// NOTE: Requests is set on an option that answers several swaps at once ("não posso em nenhum").
 	Requests []int64 `json:"requests,omitempty"`
+	// NOTE: Ranges is set on an option that registers an absence the person announced by message.
+	Ranges []DateRange `json:"ranges,omitempty"`
+}
+
+type DateRange struct {
+	From string `json:"from"`
+	To   string `json:"to"`
 }
 
 type Poll struct {

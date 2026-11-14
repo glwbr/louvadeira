@@ -100,6 +100,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		bot.Async = func(task func()) { go task() }
 		bot.OwnPhone = wa.OwnPhone
 		wa.OnVote(bot.HandleVote)
+		wa.OnText(bot.HandleText)
 		go keepConnecting(ctx, wa, log)
 		go runScheduler(ctx, bot, wa)
 	}

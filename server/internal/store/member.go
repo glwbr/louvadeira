@@ -68,3 +68,25 @@ func (s *Store) MemberAssignment(ctx context.Context, personID, assignmentID int
 		WHERE a.id = ? AND a.person_id = ? AND sc.status = 'published'`, assignmentID, personID))
 	return d, notFoundIfNoRows(err)
 }
+
+/**
+ * NOTE: The ministries a person serves in, for telling their leaders about something the person did.
+ */
+func (s *Store) PersonMinistries(ctx context.Context, personID int64) ([]int64, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT m.id FROM ministry_members mm JOIN ministries m ON m.id = mm.ministry_id
+		WHERE mm.person_id = ? AND m.archived_at IS NULL ORDER BY m.name`, personID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}

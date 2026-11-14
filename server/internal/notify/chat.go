@@ -1,0 +1,321 @@
+package notify
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"louvadeira/internal/messenger"
+	"louvadeira/internal/store"
+)
+
+const (
+	actionAbsence = "absence"
+	actionKeep    = "keep"
+	chatAhead     = 60 * 24 * time.Hour
+)
+
+/**
+ * NOTE: HandleText answers the commands a team member sends in private. Messages from people outside the team, and
+ * anything that is not a command, get no answer: the number also carries ordinary church conversations.
+ */
+func (b *Bot) HandleText(ctx context.Context, msg messenger.Incoming) {
+	cmd, ok := parseCommand(msg.Text, b.now())
+	if !ok {
+		return
+	}
+	person, err := b.Store.PersonByPhone(ctx, string(msg.From))
+	if err != nil {
+		return
+	}
+	b.Log.Info("comando recebido", "pessoa", person.Name, "comando", string(cmd.kind))
+	switch cmd.kind {
+	case commandHelp:
+		b.send(ctx, person.Phone, helpText(person.Name))
+	case commandSchedule:
+		b.sendSchedule(ctx, person)
+	case commandCannot:
+		if len(cmd.ranges) == 0 {
+			b.askWhichService(ctx, person)
+		} else {
+			b.askAbsence(ctx, person, cmd.ranges)
+		}
+	}
+}
+
+/**
+ * NOTE: One service a member is in, with every role they hold in it.
+ */
+type memberService struct {
+	date, startTime string
+	ministryID      int64
+	ministry        string
+	communion       bool
+	roles           []string
+	slots           []store.MemberSlot
+}
+
+func (s memberService) open() []int64 {
+	var ids []int64
+	for _, slot := range s.slots {
+		if slot.Status != store.AssignmentDeclined {
+			ids = append(ids, slot.AssignmentID)
+		}
+	}
+	return ids
+}
+
+func (s memberService) state() string {
+	declined, confirmed, searching := true, true, false
+	for _, slot := range s.slots {
+		declined = declined && slot.Status == store.AssignmentDeclined
+		confirmed = confirmed && slot.Status == store.AssignmentConfirmed
+		searching = searching || slot.CoverOpen
+	}
+	switch {
+	case declined && searching:
+		return " · procurando substituto 🔄"
+	case declined:
+		return " · você avisou que não vai"
+	case confirmed:
+		return " ✅"
+	}
+	return " · falta confirmar"
+}
+
+func (b *Bot) memberServices(ctx context.Context, person store.Person, from, to string) ([]memberService, error) {
+	slots, err := b.Store.MemberSlots(ctx, person.ID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	var services []memberService
+	for _, slot := range slots {
+		if !b.serviceTime(store.AssignmentDetail{Date: slot.Date, StartTime: slot.StartTime}).After(b.now()) {
+			continue
+		}
+		if n := len(services); n > 0 {
+			last := &services[n-1]
+			if last.date == slot.Date && last.startTime == slot.StartTime && last.ministryID == slot.MinistryID {
+				last.roles = append(last.roles, slot.RoleName)
+				last.slots = append(last.slots, slot)
+				continue
+			}
+		}
+		services = append(services, memberService{date: slot.Date, startTime: slot.StartTime, ministryID: slot.MinistryID,
+			ministry: slot.MinistryName, communion: slot.Communion, roles: []string{slot.RoleName}, slots: []store.MemberSlot{slot}})
+	}
+	return services, nil
+}
+
+func serviceLine(s memberService, withMinistry bool) string {
+	line := fmt.Sprintf("• %s, %s, às %s — %s", capitalize(weekday(s.date)), dayMonth(s.date), hour(s.startTime), joinNames(s.roles))
+	if withMinistry {
+		line += " (" + s.ministry + ")"
+	}
+	return line + communionMark(s.communion)
+}
+
+func manyMinistries(services []memberService) bool {
+	for _, s := range services {
+		if s.ministryID != services[0].ministryID {
+			return true
+		}
+	}
+	return false
+}
+
+func (b *Bot) upcoming(ctx context.Context, person store.Person) []memberService {
+	services, err := b.memberServices(ctx, person, b.Today(), b.now().Add(chatAhead).Format("2006-01-02"))
+	if err != nil {
+		b.Log.Error("buscar escalas da pessoa", "erro", err)
+	}
+	return services
+}
+
+func (b *Bot) sendSchedule(ctx context.Context, person store.Person) {
+	services := b.upcoming(ctx, person)
+	if len(services) == 0 {
+		b.send(ctx, person.Phone, noScheduleText(person.Name))
+		return
+	}
+	lines := make([]string, len(services))
+	for i, s := range services {
+		lines[i] = serviceLine(s, manyMinistries(services)) + s.state()
+	}
+	b.send(ctx, person.Phone, scheduleText(person.Name, lines))
+}
+
+func (b *Bot) askWhichService(ctx context.Context, person store.Person) {
+	var services []memberService
+	for _, s := range b.upcoming(ctx, person) {
+		if len(s.open()) > 0 {
+			services = append(services, s)
+		}
+	}
+	switch len(services) {
+	case 0:
+		b.send(ctx, person.Phone, noScheduleText(person.Name))
+	case 1:
+		options := []store.PollOption{
+			{Label: optionYesNotGoing, Action: actionDecline, Assignments: services[0].open()},
+			{Label: optionMistakeGoing, Action: actionKeep},
+		}
+		b.sendPoll(ctx, store.PollConfirm, person, singleServiceQuestion(person.Name, services[0]), options, false)
+	default:
+		services = services[:min(len(services), maxPollSlots)]
+		days := map[string]int{}
+		for _, s := range services {
+			days[s.date]++
+		}
+		options := make([]store.PollOption, 0, len(services)+1)
+		for _, s := range services {
+			label := "😕 " + capitalize(weekday(s.date)) + ", " + dayMonth(s.date)
+			if days[s.date] > 1 {
+				label += ", às " + hour(s.startTime)
+			}
+			options = append(options, store.PollOption{Label: label, Action: actionDecline, Assignments: s.open()})
+		}
+		options = append(options, store.PollOption{Label: optionMistakeAll, Action: actionKeep})
+		b.sendPoll(ctx, store.PollConfirm, person, whichServiceQuestion(person.Name), options, true)
+	}
+}
+
+func rangesLabel(ranges []store.DateRange) string {
+	var days, spans []string
+	for _, r := range ranges {
+		if r.From == r.To {
+			days = append(days, dayMonth(r.From))
+		} else {
+			spans = append(spans, fmt.Sprintf("de %s a %s", dayMonth(r.From), dayMonth(r.To)))
+		}
+	}
+	if len(days) > 0 {
+		spans = append([]string{"em " + joinNames(days)}, spans...)
+	}
+	return joinNames(spans)
+}
+
+func (b *Bot) askAbsence(ctx context.Context, person store.Person, ranges []store.DateRange) {
+	var lines []string
+	for _, r := range ranges {
+		services, err := b.memberServices(ctx, person, r.From, r.To)
+		if err != nil {
+			b.Log.Error("buscar escalas da pessoa", "erro", err)
+			return
+		}
+		for _, s := range services {
+			if len(s.open()) > 0 {
+				lines = append(lines, serviceLine(s, false))
+			}
+		}
+	}
+	options := []store.PollOption{
+		{Label: optionYesTell, Action: actionAbsence, Ranges: ranges},
+		{Label: optionMistake, Action: actionKeep},
+	}
+	b.sendPoll(ctx, store.PollConfirm, person, absenceQuestion(person.Name, rangesLabel(ranges), lines), options, false)
+}
+
+func isChatPoll(options []store.PollOption) bool {
+	for _, o := range options {
+		if o.Action == actionKeep {
+			return true
+		}
+	}
+	return false
+}
+
+/**
+ * INVARIANT: A poll the bot sent in reply to a command acts once. Unlike the weekly confirmation, changing the
+ * answer later does not undo it; the reply says to talk to the leaders.
+ */
+func (b *Bot) answerChatPoll(ctx context.Context, person store.Person, pollID messenger.MessageID, chosen []store.PollOption) {
+	key := "chat-answer:" + string(pollID)
+	var declineIDs []int64
+	var ranges []store.DateRange
+	keep := false
+	for _, o := range chosen {
+		switch o.Action {
+		case actionDecline:
+			declineIDs = append(declineIDs, o.Assignments...)
+		case actionAbsence:
+			ranges = append(ranges, o.Ranges...)
+		case actionKeep:
+			keep = true
+		}
+	}
+	if len(declineIDs) == 0 && len(ranges) == 0 {
+		if !keep {
+			return
+		}
+		if _, done := b.Store.NotifiedAt(ctx, key); done {
+			b.send(ctx, person.Phone, alreadyToldReply())
+		} else {
+			b.send(ctx, person.Phone, keptReply())
+		}
+		return
+	}
+	if first, err := b.Store.MarkNotified(ctx, key, b.now()); err != nil || !first {
+		return
+	}
+	if len(ranges) > 0 {
+		b.registerAbsence(ctx, person, ranges)
+		return
+	}
+	b.declineOwn(ctx, person, declineIDs)
+}
+
+func (b *Bot) declineOwn(ctx context.Context, person store.Person, assignmentIDs []int64) {
+	var ids []int64
+	for _, id := range assignmentIDs {
+		d, err := b.Store.AssignmentDetail(ctx, id)
+		if err != nil || d.PersonID != person.ID || d.Status == store.AssignmentDeclined {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return
+	}
+	if _, err := b.Decline(ctx, ids, true); err != nil {
+		b.Log.Error("registrar ausência", "erro", err)
+	}
+}
+
+func (b *Bot) registerAbsence(ctx context.Context, person store.Person, ranges []store.DateRange) {
+	label := rangesLabel(ranges)
+	var ids []int64
+	seen := map[int64]bool{}
+	for _, r := range ranges {
+		u, err := b.Store.CreateUnavailability(ctx, store.UnavailabilityInput{PersonID: person.ID, StartDate: r.From, EndDate: r.To, Reason: store.ReasonOther})
+		if err != nil {
+			b.Log.Error("registrar ausência", "erro", err)
+			continue
+		}
+		slots, err := b.AffectedBy(ctx, u)
+		if err != nil {
+			b.Log.Error("buscar escalas afetadas", "erro", err)
+			continue
+		}
+		for _, d := range slots {
+			if !seen[d.AssignmentID] {
+				seen[d.AssignmentID] = true
+				ids = append(ids, d.AssignmentID)
+			}
+		}
+	}
+	if len(ids) == 0 {
+		b.send(ctx, person.Phone, absenceNotedReply(person.Name, label))
+		ministries, err := b.Store.PersonMinistries(ctx, person.ID)
+		if err != nil {
+			b.Log.Error("buscar ministérios da pessoa", "erro", err)
+		}
+		for _, id := range ministries {
+			b.tellLeaders(ctx, id, absenceNotedAlert(person.Name, label))
+		}
+		return
+	}
+	if _, err := b.decline(ctx, ids, true, absence{period: label}); err != nil {
+		b.Log.Error("abrir trocas da ausência", "erro", err)
+	}
+}

@@ -460,8 +460,12 @@ func (b *Bot) applyVote(ctx context.Context, vote messenger.Vote) {
 	}
 	b.Log.Info("voto recebido", "enquete", poll.Kind, "pessoa", person.Name, "escolha", choice)
 
-	if poll.Kind == store.PollCover {
+	switch {
+	case poll.Kind == store.PollCover:
 		b.answerCover(ctx, person, poll.Options, chosen)
+		return
+	case isChatPoll(poll.Options):
+		b.answerChatPoll(ctx, person, vote.PollID, chosen)
 		return
 	}
 	option := chosen[len(chosen)-1]
@@ -469,20 +473,7 @@ func (b *Bot) applyVote(ctx context.Context, vote messenger.Vote) {
 	case actionConfirm:
 		b.confirm(ctx, person, option.Assignments, true)
 	case actionDecline:
-		var ids []int64
-		for _, id := range option.Assignments {
-			d, err := b.Store.AssignmentDetail(ctx, id)
-			if err != nil || d.PersonID != person.ID || d.Status == store.AssignmentDeclined {
-				continue
-			}
-			ids = append(ids, id)
-		}
-		if len(ids) == 0 {
-			return
-		}
-		if _, err := b.Decline(ctx, ids, true); err != nil {
-			b.Log.Error("registrar ausência", "erro", err)
-		}
+		b.declineOwn(ctx, person, option.Assignments)
 	}
 }
 

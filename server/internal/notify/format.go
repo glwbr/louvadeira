@@ -144,6 +144,12 @@ var reasonLabels = map[store.Reason]string{
 	store.ReasonOther:   "outro motivo",
 }
 
+/**
+ * NOTE: "outro motivo" says nothing to the leaders, so it is left out of their messages.
+ */
 func reasonLabel(r store.Reason) string {
+	if r == store.ReasonOther {
+		return ""
+	}
 	return reasonLabels[r]
 }

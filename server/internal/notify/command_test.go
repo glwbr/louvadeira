@@ -1,0 +1,69 @@
+package notify
+
+import (
+	"testing"
+	"time"
+)
+
+func TestParseCommand(t *testing.T) {
+	friday := time.Date(2026, 11, 13, 21, 0, 0, 0, time.UTC)
+	cases := []struct {
+		text   string
+		kind   commandKind
+		ranges string
+	}{
+		{"Escala", commandSchedule, ""},
+		{"minha escala!", commandSchedule, ""},
+		{"Ajuda", commandHelp, ""},
+		{"não posso", commandCannot, ""},
+		{"Não posso ir", commandCannot, ""},
+		{"Não posso dia 19", commandCannot, "2026-11-19"},
+		{"nao posso dia 5", commandCannot, "2026-12-05"},
+		{"não posso 19/11", commandCannot, "2026-11-19"},
+		{"não posso 05/01", commandCannot, "2027-01-05"},
+		{"Não posso domingo", commandCannot, "2026-11-15"},
+		{"não posso na quinta-feira", commandCannot, "2026-11-19"},
+		{"não vou conseguir hoje", commandCannot, "2026-11-13"},
+		{"Não consigo amanhã", commandCannot, "2026-11-14"},
+		{"Não posso de 10/12 a 20/12", commandCannot, "2026-12-10..2026-12-20"},
+		{"não vou poder do dia 10/12 até o dia 20/12", commandCannot, "2026-12-10..2026-12-20"},
+		{"não posso até 20/12", commandCannot, "2026-11-13..2026-12-20"},
+		{"não posso dia 19 e 22/11", commandCannot, "2026-11-19 2026-11-22"},
+		{"não posso dia 31/11", commandCannot, ""},
+	}
+	for _, c := range cases {
+		cmd, ok := parseCommand(c.text, friday)
+		if !ok || cmd.kind != c.kind || rangesText(cmd) != c.ranges {
+			t.Errorf("%q = %v %q (ok %v), want %v %q", c.text, cmd.kind, rangesText(cmd), ok, c.kind, c.ranges)
+		}
+	}
+
+	for _, text := range []string{"Oi, tudo bem?", "escala de dezembro saiu?", "não posso ir na reunião de jovens", "posso sim"} {
+		if cmd, ok := parseCommand(text, friday); ok {
+			t.Errorf("%q should be left alone, got %v", text, cmd.kind)
+		}
+	}
+}
+
+func rangesText(cmd command) string {
+	var out string
+	for i, r := range cmd.ranges {
+		if i > 0 {
+			out += " "
+		}
+		if r.From == r.To {
+			out += r.From
+		} else {
+			out += r.From + ".." + r.To
+		}
+	}
+	return out
+}
+
+func TestParseCommandUntilWithDayWord(t *testing.T) {
+	friday := time.Date(2026, 11, 13, 21, 0, 0, 0, time.UTC)
+	cmd, _ := parseCommand("não posso até o dia 20/12", friday)
+	if got := rangesText(cmd); got != "2026-11-13..2026-12-20" {
+		t.Fatalf("até o dia 20/12 = %q", got)
+	}
+}

@@ -56,6 +56,7 @@ type Client struct {
 
 	mu          sync.Mutex
 	onVote      func(context.Context, messenger.Vote)
+	onText      func(context.Context, messenger.Incoming)
 	buttonTests map[types.MessageID]string
 }
 
@@ -88,6 +89,12 @@ func Open(ctx context.Context, dbPath string, log *slog.Logger) (*Client, error)
 func (c *Client) Close() {
 	c.wm.Disconnect()
 	c.container.Close()
+}
+
+func (c *Client) OnText(handler func(context.Context, messenger.Incoming)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.onText = handler
 }
 
 func (c *Client) OnVote(handler func(context.Context, messenger.Vote)) {
@@ -343,6 +350,47 @@ func (c *Client) handleMessage(e *events.Message) {
 		return
 	}
 	c.logButtonReply(e)
+	c.handleText(e)
+}
+
+/**
+ * NOTE: Hands private texts to the bot, which only answers its own commands. Group chats, broadcasts, channels and
+ * the number's own messages never reach it. The text is not logged.
+ */
+func (c *Client) handleText(e *events.Message) {
+	if e.Info.IsFromMe || e.Info.IsGroup || e.Info.Chat.Server == types.BroadcastServer || e.Info.Chat.Server == types.NewsletterServer {
+		return
+	}
+	text := e.Message.GetConversation()
+	if text == "" {
+		text = e.Message.GetExtendedTextMessage().GetText()
+	}
+	c.mu.Lock()
+	handler := c.onText
+	c.mu.Unlock()
+	if text == "" || handler == nil {
+		return
+	}
+	ctx := context.Background()
+	phone := c.senderPhone(ctx, e.Info)
+	if phone == "" {
+		return
+	}
+	go handler(ctx, messenger.Incoming{From: messenger.Address(phone), Text: text})
+}
+
+func (c *Client) senderPhone(ctx context.Context, info types.MessageInfo) string {
+	for _, jid := range []types.JID{info.Sender, info.SenderAlt} {
+		if jid.Server == types.DefaultUserServer {
+			return jid.User
+		}
+	}
+	if info.Sender.Server == types.HiddenUserServer {
+		if pn, err := c.wm.Store.LIDs.GetPNForLID(ctx, info.Sender.ToNonAD()); err == nil && !pn.IsEmpty() {
+			return pn.User
+		}
+	}
+	return ""
 }
 
 /**

@@ -35,6 +35,14 @@ type Messenger interface {
 	SendPoll(ctx context.Context, to Address, poll Poll) (MessageID, error)
 }
 
+/**
+ * NOTE: A text someone sent the number in private. From is their phone, even when WhatsApp addressed them by LID.
+ */
+type Incoming struct {
+	From Address
+	Text string
+}
+
 var ErrNotAllowed = errors.New("destino fora da lista de permissão do modo de teste")
 
 /**

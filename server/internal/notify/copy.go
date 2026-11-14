@@ -178,3 +178,61 @@ func comebackAlert(returning string, d store.AssignmentDetail) string {
 func loginLinkText(name, link string) string {
 	return fmt.Sprintf("Oi, %s! Aqui está seu link para ver suas escalas e avisar quando não puder ir:\n%s\nEle funciona uma vez e vale por 1 hora. Depois de entrar, o celular fica conectado.", firstName(name), link)
 }
+
+const (
+	optionYesNotGoing  = "😕 Isso, não vou conseguir"
+	optionMistakeGoing = "✅ Me enganei, vou sim"
+	optionMistakeAll   = "✅ Me enganei, vou em todos"
+	optionYesTell      = "😕 Isso, pode avisar"
+	optionMistake      = "✅ Me enganei"
+)
+
+func helpText(name string) string {
+	return fmt.Sprintf("Oi, %s! Eu sou o assistente das escalas 🎶 Você pode me mandar:\n"+
+		"• *escala* para ver quando você está na escala\n"+
+		"• *não posso dia 19* para avisar que não vai conseguir ir num culto\n"+
+		"• *não posso de 10/12 a 20/12* para avisar que vai ficar fora um tempo\n"+
+		"Para confirmar presença, é só responder as enquetes que eu mando 🙂", firstName(name))
+}
+
+func scheduleText(name string, lines []string) string {
+	return fmt.Sprintf("Oi, %s! Suas próximas escalas 🎶\n%s\nSe não puder ir em algum, é só me mandar *não posso* e o dia 🙂",
+		firstName(name), strings.Join(lines, "\n"))
+}
+
+func noScheduleText(name string) string {
+	return fmt.Sprintf("Oi, %s! Você não está em nenhuma escala publicada nos próximos dias 🙂", firstName(name))
+}
+
+func singleServiceQuestion(name string, s memberService) string {
+	return fmt.Sprintf("Oi, %s! Você está na escala %s, %s, às %s (%s). Não vai conseguir ir?",
+		firstName(name), onWeekday(s.date), dayMonth(s.date), hour(s.startTime), joinNames(s.roles))
+}
+
+func whichServiceQuestion(name string) string {
+	return fmt.Sprintf("Oi, %s! Em qual culto você não vai conseguir ir? Pode marcar mais de um.", firstName(name))
+}
+
+func absenceQuestion(name, period string, lines []string) string {
+	text := fmt.Sprintf("Só para confirmar, %s: você não vai poder %s? Assim a gente não coloca você na escala nesses dias.", firstName(name), period)
+	if len(lines) > 0 {
+		text += "\nVocê está na escala em:\n" + strings.Join(lines, "\n") + "\nSe confirmar, eu já chamo alguém para ficar no seu lugar."
+	}
+	return text
+}
+
+func absenceNotedReply(name, period string) string {
+	return fmt.Sprintf("Anotado, %s! A gente não coloca você na escala %s 🙏", firstName(name), period)
+}
+
+func absenceNotedAlert(name, period string) string {
+	return fmt.Sprintf("📅 %s avisou que não vai poder %s.", name, period)
+}
+
+func keptReply() string {
+	return "Tudo certo, nada mudou 🙂"
+}
+
+func alreadyToldReply() string {
+	return "Eu já tinha avisado a liderança 🙂 Se mudou de ideia, fala com a liderança."
+}
