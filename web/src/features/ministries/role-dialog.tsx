@@ -25,6 +25,16 @@ export function RoleDialog({ open, onOpenChange, ministryId, role }: Props) {
 }
 
 const MAX_SLOTS = 20
+const EVERY_SLOT = "all"
+
+
+/**
+ * NOTE: Every count below the role's slots, largest first, between "every slot" and "nobody".
+ */
+function fewerThan(slots: number): number[] {
+  const below = Number.isInteger(slots) && slots > 1 ? Math.min(slots, MAX_SLOTS) - 1 : 0
+  return Array.from({ length: below }, (_, i) => below - i)
+}
 
 function RoleForm({ ministryId, role, onDone }: { ministryId: number; role?: Role; onDone: () => void }) {
   const { t } = useTranslation()
@@ -57,7 +67,11 @@ function RoleForm({ ministryId, role, onDone }: { ministryId: number; role?: Rol
   })
 
   const form = useAppForm({
-    defaultValues: { name: role?.name ?? "", slots: String(role?.slots ?? 1) },
+    defaultValues: {
+      name: role?.name ?? "",
+      slots: String(role?.slots ?? 1),
+      minimum: role?.minimum == null ? EVERY_SLOT : String(role.minimum),
+    },
     validationLogic: revalidateLogic(),
     validators: {
       onDynamic: ({ value }) => {
@@ -73,7 +87,8 @@ function RoleForm({ ministryId, role, onDone }: { ministryId: number; role?: Rol
       },
     },
     onSubmit: async ({ value }) => {
-      await save.mutateAsync({ name: value.name.trim(), slots: Number(value.slots) }).catch(() => undefined)
+      const minimum = value.minimum === EVERY_SLOT ? null : Number(value.minimum)
+      await save.mutateAsync({ name: value.name.trim(), slots: Number(value.slots), minimum }).catch(() => undefined)
     },
   })
 
@@ -87,7 +102,17 @@ function RoleForm({ ministryId, role, onDone }: { ministryId: number; role?: Rol
         <form.AppField name="name">
           {(field) => <field.TextField label={t("ministries.role.name")} autoFocus={!role} autoComplete="off" />}
         </form.AppField>
-        <form.AppField name="slots">
+        <form.AppField
+          name="slots"
+          listeners={{
+            onChange: ({ value }) => {
+              const minimum = form.getFieldValue("minimum")
+              if (minimum !== EVERY_SLOT && Number(minimum) >= Number(value)) {
+                form.setFieldValue("minimum", EVERY_SLOT)
+              }
+            },
+          }}
+        >
           {(field) => (
             <field.TextField
               label={t("ministries.role.slots")}
@@ -99,6 +124,26 @@ function RoleForm({ ministryId, role, onDone }: { ministryId: number; role?: Rol
             />
           )}
         </form.AppField>
+        <form.Subscribe selector={(state) => Number(state.values.slots)}>
+          {(slots) => (
+            <form.AppField name="minimum">
+              {(field) => (
+                <field.SelectField
+                  label={t("ministries.role.minimum")}
+                  hint={t("ministries.role.minimumHint")}
+                  options={[
+                    { value: EVERY_SLOT, label: t("ministries.role.minimumAll") },
+                    ...fewerThan(slots).map((count) => ({
+                      value: String(count),
+                      label: t("ministries.role.minimumCount", { count }),
+                    })),
+                    { value: "0", label: t("ministries.role.minimumNone") },
+                  ]}
+                />
+              )}
+            </form.AppField>
+          )}
+        </form.Subscribe>
         <DialogFooter className="sm:justify-between">
           {role ? (
             <ConfirmButton

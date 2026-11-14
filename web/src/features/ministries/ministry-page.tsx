@@ -237,6 +237,15 @@ function RolesTab({ ministry }: { ministry: MinistryDetail }) {
     setSelected(role)
     setOpen(true)
   }
+  const slotsLabel = (role: Role) => {
+    if (role.minimum == null) {
+      return t("ministries.roles.slots", { count: role.slots })
+    }
+    if (role.minimum === 0) {
+      return t("ministries.roles.slotsUpTo", { count: role.slots })
+    }
+    return t("ministries.roles.slotsRange", { minimum: role.minimum, count: role.slots })
+  }
   const holders = (roleId: number) => ministry.members.filter((member) => member.roles.some((role) => role.roleId === roleId)).length
 
   return (
@@ -268,7 +277,8 @@ function RolesTab({ ministry }: { ministry: MinistryDetail }) {
                 <span className="min-w-0">
                   <span className="block truncate font-medium">{role.name}</span>
                   <span className="block text-xs text-pretty text-muted-foreground">
-                    {t("ministries.roles.slots", { count: role.slots })} · {t("ministries.roles.holders", { count: holders(role.id) })}
+                    <span className="whitespace-nowrap">{slotsLabel(role)} ·</span>{" "}
+                    <span className="whitespace-nowrap">{t("ministries.roles.holders", { count: holders(role.id) })}</span>
                   </span>
                 </span>
               </button>

@@ -183,6 +183,33 @@ func TestMinistryAndRoleValidation(t *testing.T) {
 	}
 }
 
+func TestRoleMinimumOnlyKeepsFewerThanEverySlot(t *testing.T) {
+	s, ctx := newStore(t), context.Background()
+	m, _ := s.CreateMinistry(ctx, store.MinistryInput{Name: "Louvor"})
+	two, three, negative := 2, 3, -1
+	if _, err := s.CreateRole(ctx, m.ID, store.RoleInput{Name: "Voz", Slots: 3, Minimum: &negative}); !isValidation(err) {
+		t.Errorf("negative minimum: err = %v", err)
+	}
+	voice, err := s.CreateRole(ctx, m.ID, store.RoleInput{Name: "Voz", Slots: 3, Minimum: &two})
+	if err != nil || voice.Minimum == nil || *voice.Minimum != 2 {
+		t.Fatalf("voice = %+v, err = %v", voice, err)
+	}
+	drums, err := s.CreateRole(ctx, m.ID, store.RoleInput{Name: "Bateria", Slots: 1, Minimum: &three})
+	if err != nil || drums.Minimum != nil {
+		t.Fatalf("a minimum of every slot should be stored as none: %+v, err = %v", drums, err)
+	}
+	if err := s.UpdateRole(ctx, m.ID, voice.ID, store.RoleInput{Name: "Voz", Slots: 2, Minimum: &two}); err != nil {
+		t.Fatal(err)
+	}
+	d, err := s.Ministry(ctx, m.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Roles[0].Slots != 2 || d.Roles[0].Minimum != nil {
+		t.Fatalf("shrinking the role to its minimum should mean every slot: %+v", d.Roles[0])
+	}
+}
+
 func TestServiceValidationAndUpdate(t *testing.T) {
 	s, ctx := newStore(t), context.Background()
 	if _, err := s.CreateService(ctx, store.ServiceInput{Name: "Culto", Weekday: 7, StartTime: "19:30"}); !isValidation(err) {

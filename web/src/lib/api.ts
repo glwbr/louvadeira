@@ -57,6 +57,8 @@ export type Role = {
   id: number
   name: string
   slots: number
+  /** NOTE: How few people the role can go down to before the leaders are warned; null means every slot. */
+  minimum: number | null
 }
 
 export type RoleInput = Omit<Role, "id">

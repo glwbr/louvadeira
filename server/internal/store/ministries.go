@@ -35,11 +35,14 @@ type Role struct {
 	ID    int64  `json:"id"`
 	Name  string `json:"name"`
 	Slots int    `json:"slots"`
+	// NOTE: Minimum is how few people the role can go down to before the leaders are warned; nil means every slot.
+	Minimum *int `json:"minimum"`
 }
 
 type RoleInput struct {
-	Name  string `json:"name"`
-	Slots int    `json:"slots"`
+	Name    string `json:"name"`
+	Slots   int    `json:"slots"`
+	Minimum *int   `json:"minimum"`
 }
 
 type MemberRole struct {
@@ -94,7 +97,15 @@ func (in RoleInput) clean() (RoleInput, error) {
 	if in.Slots < 1 || in.Slots > 20 {
 		return RoleInput{}, invalid("a função precisa de 1 a 20 vagas por escala")
 	}
-	return RoleInput{Name: name, Slots: in.Slots}, nil
+	minimum := in.Minimum
+	if minimum != nil && *minimum < 0 {
+		return RoleInput{}, invalid("o mínimo da função não pode ser negativo")
+	}
+	// NOTE: A minimum of every slot is stored as none, so it keeps meaning "every slot" when the role grows.
+	if minimum != nil && *minimum >= in.Slots {
+		minimum = nil
+	}
+	return RoleInput{Name: name, Slots: in.Slots, Minimum: minimum}, nil
 }
 
 func (s *Store) ListMinistries(ctx context.Context) ([]Ministry, error) {
@@ -180,7 +191,7 @@ func (s *Store) Ministry(ctx context.Context, id int64) (MinistryDetail, error) 
 
 func (s *Store) roles(ctx context.Context, ministryID int64) ([]Role, error) {
 	rows, err := s.db.QueryContext(ctx,
-		"SELECT id, name, slots FROM roles WHERE ministry_id = ? ORDER BY position, id", ministryID)
+		"SELECT id, name, slots, min_slots FROM roles WHERE ministry_id = ? ORDER BY position, id", ministryID)
 	if err != nil {
 		return nil, err
 	}
@@ -188,8 +199,13 @@ func (s *Store) roles(ctx context.Context, ministryID int64) ([]Role, error) {
 	roles := []Role{}
 	for rows.Next() {
 		var r Role
-		if err := rows.Scan(&r.ID, &r.Name, &r.Slots); err != nil {
+		var minimum sql.NullInt64
+		if err := rows.Scan(&r.ID, &r.Name, &r.Slots, &minimum); err != nil {
 			return nil, err
+		}
+		if minimum.Valid {
+			n := int(minimum.Int64)
+			r.Minimum = &n
 		}
 		roles = append(roles, r)
 	}
@@ -255,12 +271,12 @@ func (s *Store) CreateRole(ctx context.Context, ministryID int64, in RoleInput) 
 	if err != nil {
 		return Role{}, err
 	}
-	r := Role{Name: in.Name, Slots: in.Slots}
+	r := Role{Name: in.Name, Slots: in.Slots, Minimum: in.Minimum}
 	err = s.db.QueryRowContext(ctx, `
-		INSERT INTO roles (ministry_id, name, slots, position)
-		SELECT m.id, ?, ?, coalesce((SELECT max(position) + 1 FROM roles WHERE ministry_id = m.id), 0)
+		INSERT INTO roles (ministry_id, name, slots, min_slots, position)
+		SELECT m.id, ?, ?, ?, coalesce((SELECT max(position) + 1 FROM roles WHERE ministry_id = m.id), 0)
 		FROM ministries m WHERE m.id = ? AND m.archived_at IS NULL
-		RETURNING id`, in.Name, in.Slots, ministryID).Scan(&r.ID)
+		RETURNING id`, in.Name, in.Slots, in.Minimum, ministryID).Scan(&r.ID)
 	if isUniqueViolation(err) {
 		return Role{}, invalid("esse ministério já tem uma função com esse nome")
 	}
@@ -273,7 +289,7 @@ func (s *Store) UpdateRole(ctx context.Context, ministryID, roleID int64, in Rol
 		return err
 	}
 	err = requireAffected(s.db.ExecContext(ctx,
-		"UPDATE roles SET name = ?, slots = ? WHERE id = ? AND ministry_id = ?", in.Name, in.Slots, roleID, ministryID))
+		"UPDATE roles SET name = ?, slots = ?, min_slots = ? WHERE id = ? AND ministry_id = ?", in.Name, in.Slots, in.Minimum, roleID, ministryID))
 	if isUniqueViolation(err) {
 		return invalid("esse ministério já tem uma função com esse nome")
 	}
