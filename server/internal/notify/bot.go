@@ -184,7 +184,26 @@ type personGroup struct {
 	key        string
 }
 
-func (b *Bot) sendConfirmations(ctx context.Context, upcoming []store.AssignmentDetail, now time.Time) {
+/**
+ * NOTE: AskNow sends the confirmations for services in [from, to] right away, even outside the scheduled hours, to
+ * whoever was not asked yet. It returns who was asked.
+ */
+func (b *Bot) AskNow(ctx context.Context, from, to string) ([]string, error) {
+	now := b.now()
+	upcoming, err := b.Store.UpcomingAssignments(ctx, from, to)
+	if err != nil {
+		return nil, err
+	}
+	var future []store.AssignmentDetail
+	for _, d := range upcoming {
+		if b.serviceTime(d).After(now) {
+			future = append(future, d)
+		}
+	}
+	return b.sendConfirmations(ctx, future, now), nil
+}
+
+func (b *Bot) sendConfirmations(ctx context.Context, upcoming []store.AssignmentDetail, now time.Time) []string {
 	groups := map[personGroup][]store.AssignmentDetail{}
 	var order []personGroup
 	for _, d := range upcoming {
@@ -194,6 +213,7 @@ func (b *Bot) sendConfirmations(ctx context.Context, upcoming []store.Assignment
 		}
 		groups[k] = append(groups[k], d)
 	}
+	asked := []string{}
 	for _, k := range order {
 		slots := groups[k]
 		pending := false
@@ -209,8 +229,11 @@ func (b *Bot) sendConfirmations(ctx context.Context, upcoming []store.Assignment
 		}
 		if !b.askConfirmation(ctx, slots) {
 			_ = b.Store.UnmarkNotified(ctx, key)
+			continue
 		}
+		asked = append(asked, slots[0].PersonName)
 	}
+	return asked
 }
 
 func confirmKey(ministryID, personID int64, group string) string {

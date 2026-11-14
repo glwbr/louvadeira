@@ -102,6 +102,8 @@ func New(d Deps) http.Handler {
 	admin("GET /api/admin/whatsapp/groups", d.groups)
 	admin("GET /api/admin/whatsapp/groups/{group}/participants", d.groupParticipants)
 	admin("POST /api/admin/whatsapp/test-poll", d.testPoll)
+	admin("POST /api/admin/whatsapp/message", d.sendMessage)
+	admin("POST /api/admin/confirmations", d.askConfirmations)
 	admin("POST /api/admin/whatsapp/test-buttons", d.testButtons)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "rota não encontrada")
@@ -174,6 +176,59 @@ func (d Deps) testPoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]messenger.MessageID{"id": id})
+}
+
+type sendMessageRequest struct {
+	To   string `json:"to"`
+	Text string `json:"text"`
+}
+
+func (d Deps) sendMessage(w http.ResponseWriter, r *http.Request) {
+	var req sendMessageRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.To == "" || strings.TrimSpace(req.Text) == "" {
+		writeError(w, http.StatusBadRequest, `envie {"to": "<grupo ou número>", "text": "..."}`)
+		return
+	}
+	if d.Messenger == nil {
+		writeError(w, http.StatusServiceUnavailable, "WhatsApp desligado")
+		return
+	}
+	id, err := d.Messenger.SendText(r.Context(), messenger.Address(req.To), req.Text)
+	if errors.Is(err, messenger.ErrNotAllowed) {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	if err != nil {
+		d.Log.Error("enviar mensagem", "erro", err)
+		writeError(w, http.StatusBadGateway, "não consegui enviar a mensagem")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]messenger.MessageID{"id": id})
+}
+
+type askConfirmationsRequest struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+func (d Deps) askConfirmations(w http.ResponseWriter, r *http.Request) {
+	var req askConfirmationsRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if !datePattern.MatchString(req.From) || !datePattern.MatchString(req.To) {
+		writeError(w, http.StatusBadRequest, "informe from e to como AAAA-MM-DD")
+		return
+	}
+	if d.Bot == nil {
+		writeError(w, http.StatusServiceUnavailable, "WhatsApp desligado")
+		return
+	}
+	asked, err := d.Bot.AskNow(r.Context(), req.From, req.To)
+	d.respond(w, http.StatusOK, map[string][]string{"asked": asked}, err)
 }
 
 func (d Deps) testButtons(w http.ResponseWriter, r *http.Request) {

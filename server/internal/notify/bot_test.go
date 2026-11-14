@@ -504,3 +504,29 @@ func TestQuickChangesOnlyCountTheLastVote(t *testing.T) {
 		t.Fatalf("the quick decline still went out: %+v", w.fake.sent)
 	}
 }
+
+func TestAskNowSendsOnlyTheChosenDaysEvenAtNight(t *testing.T) {
+	w := newWorld(t)
+	w.clock = time.Date(2026, 11, 13, 21, 30, 0, 0, saoPaulo)
+	asked, err := w.bot.AskNow(context.Background(), "2026-11-15", "2026-11-15")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(asked) == 0 || len(asked) != len(w.fake.sent) {
+		t.Fatalf("asked %v, sent %d", asked, len(w.fake.sent))
+	}
+	for _, m := range w.fake.sent {
+		if !strings.Contains(m.text, "15/11") || strings.Contains(m.text, "19/11") {
+			t.Fatalf("poll outside the chosen day: %q", m.text)
+		}
+	}
+
+	w.fake.reset()
+	w.clock = time.Date(2026, 11, 14, 8, 0, 0, 0, saoPaulo)
+	w.bot.Tick(context.Background())
+	for _, m := range w.fake.sent {
+		if strings.Contains(m.text, "15/11") {
+			t.Fatalf("the morning tick asked again about Sunday: %q", m.text)
+		}
+	}
+}
