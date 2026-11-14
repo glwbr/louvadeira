@@ -1,9 +1,9 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { CloudOff, Loader2, MessageCircleHeart, RotateCw } from "lucide-react"
 import { AnimatePresence, motion } from "motion/react"
-import { useEffect, useRef, type ReactNode } from "react"
+import type { ReactNode } from "react"
 import { useTranslation } from "react-i18next"
-import { useNavigate, useSearchParams } from "react-router"
+import { Navigate, useSearchParams } from "react-router"
 
 import { Wordmark } from "@/components/brand"
 import { useAppForm } from "@/components/form"
@@ -15,27 +15,29 @@ import { maskPhone, phoneDigits } from "@/lib/format"
 export function SignInPage() {
   const { t } = useTranslation()
   const [params] = useSearchParams()
-  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const token = params.get("token")
-  const started = useRef(false)
 
-  const redeem = useMutation({
-    mutationFn: (raw: string) => api.redeem(raw),
-    onSuccess: (person) => {
+  /**
+   * NOTE: Redeeming is a query keyed by the token, so React running the page twice in development, or the page
+   * rendering again, still spends the single-use link only once.
+   */
+  const redeem = useQuery({
+    queryKey: ["redeem", token],
+    enabled: Boolean(token),
+    retry: false,
+    staleTime: Infinity,
+    gcTime: Infinity,
+    queryFn: async () => {
+      const person = await api.redeem(token!)
       queryClient.setQueryData(queryKeys.me, person)
-      navigate(person.isAdmin ? "/" : "/minha-escala", { replace: true })
+      return person
     },
   })
 
-  useEffect(() => {
-    // NOTE: StrictMode runs effects twice in development; the link is single-use, so redeem it only once.
-    if (!token || started.current) {
-      return
-    }
-    started.current = true
-    redeem.mutate(token)
-  }, [token, redeem])
+  if (redeem.data) {
+    return <Navigate to={redeem.data.isAdmin ? "/" : "/minha-escala"} replace />
+  }
 
   const expired = redeem.error instanceof ApiError && redeem.error.status === 401
 
@@ -58,8 +60,8 @@ export function SignInPage() {
         </span>
         <h1 className="font-display text-[1.75rem] leading-tight font-semibold text-balance">{t("signIn.failedTitle")}</h1>
         <p className="text-sm text-pretty text-muted-foreground">{redeem.error.message}</p>
-        <Button size="lg" className="w-full" onClick={() => redeem.mutate(token)} disabled={redeem.isPending}>
-          {redeem.isPending ? <Loader2 className="animate-spin" /> : <RotateCw />}
+        <Button size="lg" className="w-full" onClick={() => void redeem.refetch()} disabled={redeem.isFetching}>
+          {redeem.isFetching ? <Loader2 className="animate-spin" /> : <RotateCw />}
           {t("common.tryAgain")}
         </Button>
       </Centered>
@@ -159,14 +161,9 @@ function Centered({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-svh flex-col px-6 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))]">
       <Wordmark className="mx-auto" />
-      <motion.main
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={quick}
-        className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-4 pb-16 text-center"
-      >
+      <main className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-4 pb-16 text-center">
         {children}
-      </motion.main>
+      </main>
     </div>
   )
 }
