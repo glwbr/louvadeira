@@ -157,11 +157,13 @@ export type Unavailability = {
   repeat: Repeat
   weekday: number | null
   weekOfMonth: number | null
+  /** NOTE: True for days the person marked in the monthly availability poll on WhatsApp. */
+  fromPoll: boolean
   /** NOTE: Services the person still holds in published schedules during the absence, swaps not opened yet. */
   scheduled: number
 }
 
-export type UnavailabilityInput = Omit<Unavailability, "id" | "personName" | "scheduled">
+export type UnavailabilityInput = Omit<Unavailability, "id" | "personName" | "scheduled" | "fromPoll">
 
 export type MemberSlot = {
   assignmentId: number

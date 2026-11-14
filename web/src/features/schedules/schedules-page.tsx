@@ -327,7 +327,7 @@ function UnavailabilityCard({ list, defaultDate }: { list: Unavailability[]; def
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{u.personName}</p>
                 <p className="text-xs text-muted-foreground">
-                  {absenceLabel(u)} · {REASON_LABEL[u.reason]}
+                  {absenceLabel(u)} · {u.fromPoll ? "pela enquete" : REASON_LABEL[u.reason]}
                 </p>
               </div>
               {u.scheduled > 0 && (
