@@ -97,7 +97,11 @@ export function dayOfMonth(date: string): string {
 }
 
 export function weekdayShort(date: string): string {
-  return t(WEEKDAY_SHORT_KEYS[parseDate(date).getDay()])
+  return weekdayShortName(parseDate(date).getDay())
+}
+
+export function weekdayShortName(index: number): string {
+  return t(WEEKDAY_SHORT_KEYS[index])
 }
 
 export function longDate(date: string): string {
@@ -237,14 +241,16 @@ export function communionLabel(
   if (!service.communionWeek) {
     return null
   }
-  return t("format.communion", {
+  const key = masculine(service.weekday) ? "format.communionMasculine" : "format.communionFeminine"
+  return t(key, {
     week: service.communionWeek,
     weekday: weekdayName(service.weekday).toLowerCase(),
   })
 }
 
 export function ordinalOfMonth(week: number, weekday: number): string {
-  return t("format.ordinalOfMonth", {
+  const key = masculine(weekday) ? "format.ordinalMasculine" : "format.ordinalFeminine"
+  return t(key, {
     week,
     weekday: weekdayName(weekday).toLowerCase(),
   })

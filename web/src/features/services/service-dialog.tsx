@@ -1,16 +1,13 @@
+import { revalidateLogic } from "@tanstack/react-form"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { useState, type FormEvent } from "react"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
-import { Button } from "@/components/ui/button"
+import { useAppForm } from "@/components/form"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Switch } from "@/components/ui/switch"
-import { api, queryKeys, type Service } from "@/lib/api"
+import { api, queryKeys, type Service, type ServiceInput } from "@/lib/api"
 import { toastError } from "@/lib/errors"
-import { WEEKDAY_INDEXES, weekdayName } from "@/lib/format"
+import { ordinalOfMonth, WEEKDAY_INDEXES, weekdayName } from "@/lib/format"
 
 type Props = {
   open: boolean
@@ -21,111 +18,116 @@ type Props = {
 export function ServiceDialog({ open, onOpenChange, service }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>{open && <ServiceForm service={service} onDone={() => onOpenChange(false)} />}</DialogContent>
+      <DialogContent autoFocusFirst={!service}>
+        {open && <ServiceForm service={service} onDone={() => onOpenChange(false)} />}
+      </DialogContent>
     </Dialog>
   )
 }
 
-function ServiceForm({ service, onDone }: { service?: Service; onDone: () => void }) {
-  const queryClient = useQueryClient()
-  const [name, setName] = useState(service?.name ?? "")
-  const [weekday, setWeekday] = useState(String(service?.weekday ?? 0))
-  const [startTime, setStartTime] = useState(service?.startTime ?? "19:00")
-  const [active, setActive] = useState(service?.active ?? true)
-  const [communionWeek, setCommunionWeek] = useState(String(service?.communionWeek ?? "none"))
+const NO_COMMUNION = "none"
 
+function ServiceForm({ service, onDone }: { service?: Service; onDone: () => void }) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
   const save = useMutation({
-    mutationFn: () => {
-      const input = {
-        name,
-        weekday: Number(weekday),
-        startTime,
-        active,
-        communionWeek: communionWeek === "none" ? null : Number(communionWeek),
-      }
-      return service ? api.services.update(service.id, input) : api.services.create(input)
-    },
+    mutationFn: (input: ServiceInput) => (service ? api.services.update(service.id, input) : api.services.create(input)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.services })
-      toast.success(service ? "Culto atualizado" : "Culto cadastrado")
+      toast.success(service ? t("services.dialog.updated") : t("services.dialog.created"))
       onDone()
     },
     onError: toastError,
   })
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    save.mutate()
-  }
+  const form = useAppForm({
+    defaultValues: {
+      name: service?.name ?? "",
+      weekday: String(service?.weekday ?? 0),
+      startTime: service?.startTime ?? "19:00",
+      active: service?.active ?? true,
+      communionWeek: service?.communionWeek ? String(service.communionWeek) : NO_COMMUNION,
+    },
+    validationLogic: revalidateLogic(),
+    validators: {
+      onDynamic: ({ value }) => {
+        const fields: { name?: string; startTime?: string } = {}
+        if (!value.name.trim()) {
+          fields.name = t("services.dialog.nameRequired")
+        }
+        if (!value.startTime) {
+          fields.startTime = t("services.dialog.timeRequired")
+        }
+        return Object.keys(fields).length > 0 ? { fields } : undefined
+      },
+    },
+    onSubmit: async ({ value }) => {
+      await save
+        .mutateAsync({
+          name: value.name.trim(),
+          weekday: Number(value.weekday),
+          startTime: value.startTime,
+          active: value.active,
+          communionWeek: value.communionWeek === NO_COMMUNION ? null : Number(value.communionWeek),
+        })
+        .catch(() => undefined)
+    },
+  })
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-4">
-      <DialogHeader>
-        <DialogTitle>{service ? "Editar culto" : "Novo culto"}</DialogTitle>
-        <DialogDescription>Cultos que se repetem toda semana.</DialogDescription>
-      </DialogHeader>
-      <div className="grid gap-2">
-        <Label htmlFor="service-name">Nome</Label>
-        <Input
-          id="service-name"
-          placeholder="Culto de domingo à noite"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          autoFocus
-          required
-        />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="grid gap-2">
-          <Label>Dia</Label>
-          <Select value={weekday} onValueChange={setWeekday}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {WEEKDAY_INDEXES.map((index) => (
-                <SelectItem key={index} value={String(index)}>
-                  {weekdayName(index)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+    <form.AppForm>
+      <form.Form>
+        <DialogHeader>
+          <DialogTitle>{service ? t("services.dialog.editTitle") : t("services.dialog.newTitle")}</DialogTitle>
+          <DialogDescription>{t("services.dialog.lead")}</DialogDescription>
+        </DialogHeader>
+        <form.AppField name="name">
+          {(field) => (
+            <field.TextField
+              label={t("services.dialog.name")}
+              placeholder={t("services.dialog.namePlaceholder")}
+              autoFocus={!service}
+              autoComplete="off"
+            />
+          )}
+        </form.AppField>
+        <div className="grid grid-cols-2 gap-3">
+          <form.AppField name="weekday">
+            {(field) => (
+              <field.SelectField
+                label={t("services.dialog.weekday")}
+                options={WEEKDAY_INDEXES.map((index) => ({ value: String(index), label: weekdayName(index) }))}
+              />
+            )}
+          </form.AppField>
+          <form.AppField name="startTime">
+            {(field) => <field.TextField type="time" label={t("services.dialog.time")} />}
+          </form.AppField>
         </div>
-        <div className="grid gap-2">
-          <Label htmlFor="service-time">Horário</Label>
-          <Input id="service-time" type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} required />
-        </div>
-      </div>
-      <div className="grid gap-2">
-        <Label>Santa Ceia</Label>
-        <Select value={communionWeek} onValueChange={setCommunionWeek}>
-          <SelectTrigger className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">Não tem Santa Ceia neste culto</SelectItem>
-            {[1, 2, 3, 4].map((n) => (
-              <SelectItem key={n} value={String(n)}>
-                {n}º {weekdayName(Number(weekday)).toLowerCase()} do mês
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      {service && (
-        <label className="flex items-center justify-between gap-3 rounded-lg border p-3">
-          <div>
-            <p className="text-sm font-medium">Culto ativo</p>
-            <p className="text-xs text-muted-foreground">Desative em vez de apagar, para manter o histórico.</p>
-          </div>
-          <Switch checked={active} onCheckedChange={setActive} />
-        </label>
-      )}
-      <DialogFooter>
-        <Button type="submit" disabled={save.isPending}>
-          {save.isPending ? "Salvando…" : "Salvar"}
-        </Button>
-      </DialogFooter>
-    </form>
+        <form.Subscribe selector={(state) => Number(state.values.weekday)}>
+          {(weekday) => (
+            <form.AppField name="communionWeek">
+              {(field) => (
+                <field.SelectField
+                  label={t("services.dialog.communion")}
+                  options={[
+                    { value: NO_COMMUNION, label: t("services.dialog.noCommunion") },
+                    ...[1, 2, 3, 4].map((week) => ({ value: String(week), label: ordinalOfMonth(week, weekday) })),
+                  ]}
+                />
+              )}
+            </form.AppField>
+          )}
+        </form.Subscribe>
+        {service && (
+          <form.AppField name="active">
+            {(field) => <field.SwitchField label={t("services.dialog.active")} description={t("services.dialog.activeHint")} />}
+          </form.AppField>
+        )}
+        <DialogFooter>
+          <form.SubmitButton pendingLabel={t("common.saving")}>{t("common.save")}</form.SubmitButton>
+        </DialogFooter>
+      </form.Form>
+    </form.AppForm>
   )
 }
