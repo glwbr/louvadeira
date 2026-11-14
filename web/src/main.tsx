@@ -11,9 +11,11 @@ import App from "./App.tsx"
 import { ThemeProvider } from "@/components/theme-provider.tsx"
 import { Toaster } from "@/components/ui/sonner"
 import { ApiError } from "@/lib/api"
+import { trackInputModality } from "@/lib/input-modality"
 
 // NOTE: With autoUpdate, registerSW reloads the page once a new version is installed, so nobody keeps an old build.
 registerSW({ immediate: true })
+trackInputModality()
 
 const queryClient = new QueryClient({
   defaultOptions: {

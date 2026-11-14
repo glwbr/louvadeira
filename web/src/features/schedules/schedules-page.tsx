@@ -218,7 +218,7 @@ function ScheduleBoard({ ministryId, month, direction }: { ministryId: number; m
 
   return (
     <div className="flex flex-col gap-8">
-      <div className={cn("transition-opacity duration-200", stale && "pointer-events-none opacity-50")} aria-busy={stale}>
+      <div className={cn("overflow-x-clip transition-opacity duration-200", stale && "pointer-events-none opacity-50")} aria-busy={stale}>
         <Swap id={state} direction={direction}>
           {state === "loading" ? (
             <BoardSkeleton />

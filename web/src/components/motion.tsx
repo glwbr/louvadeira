@@ -1,4 +1,4 @@
-import { AnimatePresence, motion, type HTMLMotionProps, type Transition } from "motion/react"
+import { AnimatePresence, motion, PresenceContext, type HTMLMotionProps, type Transition } from "motion/react"
 import { useState, type ReactNode } from "react"
 
 export const EASE_OUT = [0.16, 1, 0.3, 1] as const
@@ -19,7 +19,7 @@ export function AnimatedList({ children }: { children: ReactNode }) {
  * CONSTRAINT: Rows animate their own height, not their position. A position animation also fires when something
  * above the list changes size and would slide the row in from where it used to be, clipped by the card.
  */
-export function AnimatedItem(props: HTMLMotionProps<"li">) {
+export function AnimatedItem({ children, ...props }: HTMLMotionProps<"li"> & { children?: ReactNode }) {
   return (
     <motion.li
       initial={{ opacity: 0, height: 0, overflow: "hidden" }}
@@ -27,8 +27,19 @@ export function AnimatedItem(props: HTMLMotionProps<"li">) {
       exit={{ opacity: 0, height: 0, overflow: "hidden", transition: { duration: 0.18, ease: EASE_OUT } }}
       transition={quick}
       {...props}
-    />
+    >
+      <Isolate>{children}</Isolate>
+    </motion.li>
   )
+}
+
+/**
+ * CONSTRAINT: AnimatePresence with initial={false} blocks the entrance of every motion element inside the children it
+ * starts with, even one that mounts much later (a tab panel, a month sliding in). Isolate ends that reach, so only the
+ * wrapper itself skips its first entrance.
+ */
+export function Isolate({ children }: { children: ReactNode }) {
+  return <PresenceContext.Provider value={null}>{children}</PresenceContext.Provider>
 }
 
 /**
@@ -48,5 +59,26 @@ export function Swap({ id, direction = 0, children, className }: { id: string; d
     >
       {children}
     </motion.div>
+  )
+}
+
+/**
+ * NOTE: Fade through between screens, the pattern for moving across top-level destinations: the old screen fades out
+ * fast, the new one fades in while growing slightly from its top, and the page starts scrolled to the top. Under
+ * reduced motion only the fade remains.
+ */
+export function ScreenTransition({ id, children }: { id: string; children: ReactNode }) {
+  return (
+    <AnimatePresence mode="wait" initial={false} onExitComplete={() => window.scrollTo(0, 0)}>
+      <motion.div
+        key={id}
+        className="origin-top"
+        initial={{ opacity: 0, scale: 0.985 }}
+        animate={{ opacity: 1, scale: 1, transition: { duration: 0.21, ease: EASE_OUT } }}
+        exit={{ opacity: 0, transition: { duration: 0.09, ease: "easeIn" } }}
+      >
+        <Isolate>{children}</Isolate>
+      </motion.div>
+    </AnimatePresence>
   )
 }

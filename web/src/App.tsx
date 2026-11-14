@@ -1,4 +1,4 @@
-import { lazy, Suspense, type ReactNode } from "react"
+import { Suspense, type ReactNode } from "react"
 import { Navigate, Route, Routes } from "react-router"
 
 import { AppShell } from "@/components/app-shell"
@@ -8,32 +8,25 @@ import { RequireAdmin } from "@/components/require-admin"
 import { RequireSignedIn } from "@/components/require-signed-in"
 import { Skeleton } from "@/components/ui/skeleton"
 import { whenIdle } from "@/lib/idle"
-
-const screens = {
-  signIn: () => import("@/features/auth/sign-in-page").then((m) => ({ default: m.SignInPage })),
-  home: () => import("@/features/home/home-page").then((m) => ({ default: m.HomePage })),
-  member: () => import("@/features/member/member-page").then((m) => ({ default: m.MemberPage })),
-  ministries: () => import("@/features/ministries/ministries-page").then((m) => ({ default: m.MinistriesPage })),
-  ministry: () => import("@/features/ministries/ministry-page").then((m) => ({ default: m.MinistryPage })),
-  people: () => import("@/features/people/people-page").then((m) => ({ default: m.PeoplePage })),
-  schedules: () => import("@/features/schedules/schedules-page").then((m) => ({ default: m.SchedulesPage })),
-  services: () => import("@/features/services/services-page").then((m) => ({ default: m.ServicesPage })),
-}
+import { preloadable } from "@/lib/preloadable"
 
 /**
  * TRADEOFF: Each screen is its own file, so a member opening their link from WhatsApp gets their page first. Once the
  * app is idle the other screens download in the background, so moving between tabs never waits on a file.
  */
-const SignInPage = lazy(screens.signIn)
-const HomePage = lazy(screens.home)
-const MemberPage = lazy(screens.member)
-const MinistriesPage = lazy(screens.ministries)
-const MinistryPage = lazy(screens.ministry)
-const PeoplePage = lazy(screens.people)
-const SchedulesPage = lazy(screens.schedules)
-const ServicesPage = lazy(screens.services)
+const screens = {
+  SignInPage: preloadable(() => import("@/features/auth/sign-in-page").then((m) => ({ default: m.SignInPage }))),
+  HomePage: preloadable(() => import("@/features/home/home-page").then((m) => ({ default: m.HomePage }))),
+  MemberPage: preloadable(() => import("@/features/member/member-page").then((m) => ({ default: m.MemberPage }))),
+  MinistriesPage: preloadable(() => import("@/features/ministries/ministries-page").then((m) => ({ default: m.MinistriesPage }))),
+  MinistryPage: preloadable(() => import("@/features/ministries/ministry-page").then((m) => ({ default: m.MinistryPage }))),
+  PeoplePage: preloadable(() => import("@/features/people/people-page").then((m) => ({ default: m.PeoplePage }))),
+  SchedulesPage: preloadable(() => import("@/features/schedules/schedules-page").then((m) => ({ default: m.SchedulesPage }))),
+  ServicesPage: preloadable(() => import("@/features/services/services-page").then((m) => ({ default: m.ServicesPage }))),
+}
+const { SignInPage, HomePage, MemberPage, MinistriesPage, MinistryPage, PeoplePage, SchedulesPage, ServicesPage } = screens
 
-whenIdle(() => Object.values(screens).forEach((load) => void load()))
+whenIdle(() => Object.values(screens).forEach((screen) => void screen.preload()))
 
 function Page({ children }: { children: ReactNode }) {
   return (

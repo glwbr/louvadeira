@@ -3,10 +3,10 @@ import { CalendarClock, CalendarDays, Church, Home, Users, type LucideIcon } fro
 import { motion } from "motion/react"
 import { useEffect } from "react"
 import { useTranslation } from "react-i18next"
-import { Link, NavLink, Outlet } from "react-router"
+import { Link, NavLink, useLocation, useOutlet } from "react-router"
 
 import { Wordmark } from "@/components/brand"
-import { spring } from "@/components/motion"
+import { ScreenTransition, spring } from "@/components/motion"
 import { ActivityBar, SignOutButton } from "@/components/shell-parts"
 import { whenIdle } from "@/lib/idle"
 import { prefetchScreen } from "@/lib/queries"
@@ -25,6 +25,8 @@ const NAV: NavItem[] = [
 export function AppShell() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const location = useLocation()
+  const outlet = useOutlet()
   // NOTE: A screen's data is fetched while the finger is still on its tab, so it opens drawn instead of filling in.
   const warm = (to: string) => () => void prefetchScreen(queryClient, to)
 
@@ -68,7 +70,7 @@ export function AppShell() {
       </header>
 
       <main className="mx-auto max-w-3xl px-4 pt-6 pb-8 lg:max-w-4xl lg:pt-10">
-        <Outlet />
+        <ScreenTransition id={location.pathname}>{outlet}</ScreenTransition>
       </main>
 
       <nav
