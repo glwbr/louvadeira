@@ -1,4 +1,6 @@
-import type { ReactNode } from "react"
+import { Loader2 } from "lucide-react"
+import type { ComponentProps, ReactNode } from "react"
+import { useTranslation } from "react-i18next"
 
 import {
   AlertDialog,
@@ -12,43 +14,69 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 
 type Props = {
-  label: string
-  title: string
-  description: string
+  label: ReactNode
+  title: ReactNode
+  description: ReactNode
   onConfirm: () => void
+  confirmLabel?: ReactNode
   pending?: boolean
   tone?: "destructive" | "primary" | "outline"
+  size?: ComponentProps<typeof Button>["size"]
   icon?: ReactNode
+  className?: string
+  "aria-label"?: string
+  children?: ReactNode
 }
 
-export function ConfirmButton({ label, title, description, onConfirm, pending, tone = "destructive", icon }: Props) {
-  const trigger =
-    tone === "destructive" ? (
-      <Button type="button" variant="ghost" className="text-destructive hover:text-destructive" disabled={pending}>
-        {icon}
-        {label}
-      </Button>
-    ) : (
-      <Button type="button" variant={tone === "primary" ? "default" : "outline"} disabled={pending}>
-        {icon}
-        {label}
-      </Button>
-    )
+/**
+ * NOTE: A button that asks before acting. children, when given, go between the description and the buttons, for
+ * example the list of what is about to change.
+ */
+export function ConfirmButton({
+  label,
+  title,
+  description,
+  onConfirm,
+  confirmLabel,
+  pending,
+  tone = "destructive",
+  size,
+  icon,
+  className,
+  children,
+  ...rest
+}: Props) {
+  const { t } = useTranslation()
+  const variant = tone === "destructive" ? "ghost" : tone === "primary" ? "default" : "outline"
 
   return (
     <AlertDialog>
-      <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
+      <AlertDialogTrigger asChild>
+        <Button
+          type="button"
+          variant={variant}
+          size={size}
+          disabled={pending}
+          aria-label={rest["aria-label"]}
+          className={cn(tone === "destructive" && "text-danger hover:text-danger", className)}
+        >
+          {pending ? <Loader2 className="animate-spin" /> : icon}
+          {label}
+        </Button>
+      </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
+        {children}
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
           <AlertDialogAction variant={tone === "destructive" ? "destructive" : "default"} onClick={onConfirm}>
-            {label}
+            {confirmLabel ?? label}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

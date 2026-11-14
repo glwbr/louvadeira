@@ -1,46 +1,43 @@
-import { useQueryClient } from "@tanstack/react-query"
-import { LayoutDashboard, LogOut } from "lucide-react"
+import { LayoutDashboard } from "lucide-react"
+import { motion } from "motion/react"
+import { useTranslation } from "react-i18next"
 import { Link, Outlet } from "react-router"
 
+import { Wordmark } from "@/components/brand"
+import { quick } from "@/components/motion"
+import { ActivityBar, SignOutButton } from "@/components/shell-parts"
 import { Button } from "@/components/ui/button"
-import { api, type Person } from "@/lib/api"
+import type { Person } from "@/lib/api"
 
 export function MemberShell({ me }: { me: Person }) {
-  const queryClient = useQueryClient()
-
-  const logout = async () => {
-    await api.logout().catch(() => undefined)
-    queryClient.clear()
-    window.location.assign("/entrar")
-  }
-
+  const { t } = useTranslation()
   return (
-    <div className="min-h-svh pb-[env(safe-area-inset-bottom)]">
-      <header className="sticky top-0 z-10 border-b bg-background/85 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-2xl items-center justify-between px-4">
-          <div className="flex items-center gap-2">
-            <img src="/favicon.svg" alt="" className="size-7" />
-            <span className="font-semibold tracking-tight">louvadeira</span>
-          </div>
+    <div className="min-h-svh pb-[calc(2rem+env(safe-area-inset-bottom))]">
+      <header className="sticky top-0 z-20 border-b bg-background/85 backdrop-blur-md">
+        <ActivityBar />
+        <div className="mx-auto flex h-16 max-w-2xl items-center justify-between gap-3 px-4">
+          <Wordmark />
           <div className="flex items-center gap-1">
             {me.isAdmin && (
-              <Button variant="ghost" size="sm" asChild>
+              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" asChild>
                 <Link to="/">
                   <LayoutDashboard />
-                  Painel
+                  {t("nav.panel")}
                 </Link>
               </Button>
             )}
-            <Button variant="ghost" size="sm" onClick={logout}>
-              <LogOut />
-              Sair
-            </Button>
+            <SignOutButton to="/entrar" />
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-2xl px-4 py-6">
+      <motion.main
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={quick}
+        className="mx-auto max-w-2xl px-4 pt-6 pb-8"
+      >
         <Outlet />
-      </main>
+      </motion.main>
     </div>
   )
 }
