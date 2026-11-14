@@ -21,6 +21,9 @@ type requestLinkRequest struct {
 /**
  * NOTE: Anyone can ask for an access link by phone. The answer is the same whether or not the number is registered,
  * so the form does not reveal who is on the team.
+ *
+ * CONSTRAINT: While the last link still works, asking again sends nothing: the person already has a link to use, and
+ * a stranger who knows the number can make the bot write to it at most once per link lifetime.
  */
 func (d Deps) requestLink(w http.ResponseWriter, r *http.Request) {
 	var req requestLinkRequest
@@ -35,6 +38,14 @@ func (d Deps) requestLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil || d.Bot == nil {
+		writeJSON(w, http.StatusAccepted, accepted)
+		return
+	}
+	live, err := d.Store.HasLiveLoginToken(r.Context(), person.ID, d.now())
+	if err != nil {
+		d.Log.Error("ver link de acesso", "erro", err)
+	}
+	if err != nil || live {
 		writeJSON(w, http.StatusAccepted, accepted)
 		return
 	}
@@ -74,7 +85,13 @@ func (d Deps) sendLink(r *http.Request, person store.Person) error {
 	if err != nil {
 		return err
 	}
-	return d.Bot.SendLoginLink(r.Context(), person, d.PublicURL+"/entrar?token="+token)
+	if err := d.Bot.SendLoginLink(r.Context(), person, d.PublicURL+"/entrar?token="+token); err != nil {
+		if discardErr := d.Store.DiscardLoginToken(r.Context(), token); discardErr != nil {
+			d.Log.Error("descartar link de acesso", "erro", discardErr)
+		}
+		return err
+	}
+	return nil
 }
 
 func (d Deps) member(w http.ResponseWriter, r *http.Request) (store.Person, bool) {

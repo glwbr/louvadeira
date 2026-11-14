@@ -72,6 +72,7 @@ type harness struct {
 	store   *store.Store
 	polls   *fakeMessenger
 	cookie  string
+	clock   time.Time
 }
 
 func newHarness(t *testing.T) *harness {
@@ -85,17 +86,17 @@ func newHarness(t *testing.T) *harness {
 	if err := storage.Migrate(ctx, db); err != nil {
 		t.Fatal(err)
 	}
-	h := &harness{t: t, store: store.New(db), polls: &fakeMessenger{}}
+	h := &harness{t: t, store: store.New(db), polls: &fakeMessenger{}, clock: now}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	h.handler = httpserver.New(httpserver.Deps{
 		Log:          logger,
 		UI:           ui,
 		Store:        h.store,
-		Now:          func() time.Time { return now },
+		Now:          func() time.Time { return h.clock },
 		WhatsAppMode: "test",
 		WhatsApp:     fakeWhatsApp{status: whatsapp.Status{Linked: true, Connected: true}},
 		Messenger:    h.polls,
-		Bot:          &notify.Bot{Store: h.store, Messenger: h.polls, Log: logger, Now: func() time.Time { return now }},
+		Bot:          &notify.Bot{Store: h.store, Messenger: h.polls, Log: logger, Now: func() time.Time { return h.clock }},
 		AdminToken:   "segredo",
 		PublicURL:    "https://louvadeira.test",
 	})

@@ -8,7 +8,7 @@ import (
 	"louvadeira/internal/store"
 )
 
-// CONSTRAINT: One access link per person every two minutes, so the public form cannot be used to flood someone.
+// CONSTRAINT: Two minutes between access links to one person, so a leader sending a link twice in a row sends one.
 const loginLinkGap = 2 * time.Minute
 
 var ErrTooSoon = errors.New("o link acabou de ser enviado; espere um pouco")

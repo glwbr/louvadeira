@@ -37,7 +37,7 @@ export const ptBR = {
     submit: "Receber link",
     sending: "Enviando…",
     sentTitle: "Link a caminho",
-    sent: "Se esse número estiver na equipe, o link chega no seu WhatsApp em instantes.",
+    sent: "Se esse número estiver na equipe, o link chega no seu WhatsApp em instantes. Já pediu há menos de 1 hora? Use o link que chegou.",
     otherNumber: "Usar outro número",
   },
   home: {

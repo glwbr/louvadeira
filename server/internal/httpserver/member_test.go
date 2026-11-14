@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"louvadeira/internal/store"
 )
@@ -112,5 +114,78 @@ func TestAccessLinkArrivesOnWhatsApp(t *testing.T) {
 	}
 	if rec := h.do(http.MethodPost, "/api/auth/redeem", fmt.Sprintf(`{"token":%q}`, match[1])); rec.Code != http.StatusOK {
 		t.Fatalf("redeem: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestAnotherLinkWaitsUntilTheLastOneIsUsedOrExpires(t *testing.T) {
+	h := newHarness(t)
+	setUpBassists(t, h)
+	ask := func() {
+		t.Helper()
+		if rec := h.do(http.MethodPost, "/api/auth/link", `{"phone":"(11) 91111-1111"}`); rec.Code != http.StatusAccepted {
+			t.Fatalf("ask: %d %s", rec.Code, rec.Body)
+		}
+	}
+
+	ask()
+	h.clock = now.Add(30 * time.Minute)
+	ask()
+	if len(h.polls.texts) != 1 {
+		t.Fatalf("a second link went out while the first still works: %v", h.polls.texts)
+	}
+
+	h.clock = now.Add(61 * time.Minute)
+	ask()
+	if len(h.polls.texts) != 2 {
+		t.Fatalf("no new link after the first one expired: %v", h.polls.texts)
+	}
+	match := linkPattern.FindStringSubmatch(h.polls.texts[1])
+	if rec := h.do(http.MethodPost, "/api/auth/redeem", fmt.Sprintf(`{"token":%q}`, match[1])); rec.Code != http.StatusOK {
+		t.Fatalf("redeem: %d %s", rec.Code, rec.Body)
+	}
+
+	h.clock = h.clock.Add(3 * time.Minute)
+	ask()
+	if len(h.polls.texts) != 3 {
+		t.Fatalf("no new link after the last one was used: %v", h.polls.texts)
+	}
+}
+
+func TestTheSignInFormSlowsDownOneClient(t *testing.T) {
+	h := newHarness(t)
+	send := func(remote, forwarded string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/link", strings.NewReader(`{"phone":"(11) 93333-3333"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = remote
+		if forwarded != "" {
+			req.Header.Set("CF-Connecting-IP", forwarded)
+		}
+		rec := httptest.NewRecorder()
+		h.handler.ServeHTTP(rec, req)
+		return rec
+	}
+
+	for range 10 {
+		if rec := send("127.0.0.1:5000", "203.0.113.7"); rec.Code != http.StatusAccepted {
+			t.Fatalf("within the limit: %d", rec.Code)
+		}
+	}
+	if rec := send("127.0.0.1:5000", "203.0.113.7"); rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" {
+		t.Fatalf("past the limit: %d, Retry-After %q", rec.Code, rec.Header().Get("Retry-After"))
+	}
+	if rec := send("127.0.0.1:5000", "203.0.113.8"); rec.Code != http.StatusAccepted {
+		t.Fatalf("another visitor through the tunnel was blocked: %d", rec.Code)
+	}
+
+	for i := range 10 {
+		send("192.168.0.20:4000", fmt.Sprintf("198.51.100.%d", i))
+	}
+	if rec := send("192.168.0.20:4000", "198.51.100.99"); rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("a header sent from outside the tunnel chose the client: %d", rec.Code)
+	}
+
+	h.clock = now.Add(15 * time.Minute)
+	if rec := send("127.0.0.1:5000", "203.0.113.7"); rec.Code != http.StatusAccepted {
+		t.Fatalf("still blocked after the window: %d", rec.Code)
 	}
 }

@@ -42,6 +42,21 @@ func (s *Store) CreateLoginToken(ctx context.Context, personID int64, now time.T
 	return raw, err
 }
 
+// NOTE: Whether the person still has a link that works: not used and not expired.
+func (s *Store) HasLiveLoginToken(ctx context.Context, personID int64, now time.Time) (bool, error) {
+	var live bool
+	err := s.db.QueryRowContext(ctx,
+		"SELECT EXISTS (SELECT 1 FROM login_tokens WHERE person_id = ? AND used_at IS NULL AND expires_at > ?)",
+		personID, formatTime(now)).Scan(&live)
+	return live, err
+}
+
+// NOTE: Drops a link that never reached the person, so it does not stand in the way of the next one.
+func (s *Store) DiscardLoginToken(ctx context.Context, raw string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM login_tokens WHERE token_hash = ?", hashToken(raw))
+	return err
+}
+
 /**
  * INVARIANT: A login token turns into at most one session: it is marked used in the same transaction that
  * creates the session, and expired or used tokens are rejected.

@@ -268,6 +268,35 @@ func TestLoginTokenWorksOnceAndExpires(t *testing.T) {
 	}
 }
 
+func TestALinkIsLiveUntilUsedExpiredOrDiscarded(t *testing.T) {
+	s, ctx := newStore(t), context.Background()
+	person, _ := s.CreatePerson(ctx, store.PersonInput{Name: "Edu", Phone: "11911111111"})
+	now := time.Date(2026, 11, 13, 20, 0, 0, 0, time.UTC)
+	live := func(at time.Time) bool {
+		t.Helper()
+		ok, err := s.HasLiveLoginToken(ctx, person.ID, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+
+	if live(now) {
+		t.Fatal("live before any link")
+	}
+	token, _ := s.CreateLoginToken(ctx, person.ID, now, time.Hour)
+	if !live(now.Add(59*time.Minute)) || live(now.Add(61*time.Minute)) {
+		t.Fatal("a link should be live for its hour only")
+	}
+	if _, _, err := s.RedeemLoginToken(ctx, token, now.Add(time.Minute), time.Hour); err != nil || live(now.Add(2*time.Minute)) {
+		t.Fatalf("a used link is still live (err = %v)", err)
+	}
+	unsent, _ := s.CreateLoginToken(ctx, person.ID, now, time.Hour)
+	if err := s.DiscardLoginToken(ctx, unsent); err != nil || live(now) {
+		t.Fatalf("a discarded link is still live (err = %v)", err)
+	}
+}
+
 func TestEnsureAdminPromotesAnExistingPerson(t *testing.T) {
 	s, ctx := newStore(t), context.Background()
 	p, _ := s.CreatePerson(ctx, store.PersonInput{Name: "Eli", Phone: "11977776666"})

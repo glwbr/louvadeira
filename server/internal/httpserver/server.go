@@ -58,10 +58,11 @@ func New(d Deps) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", d.health)
 
-	mux.HandleFunc("POST /api/auth/redeem", d.redeem)
+	// NOTE: Room for a whole team signing in from the church Wi-Fi, which shares one address.
+	mux.HandleFunc("POST /api/auth/redeem", d.limited(newLimiter(30, 15*time.Minute), d.redeem))
 	mux.HandleFunc("POST /api/auth/logout", d.logout)
 	mux.Handle("GET /api/me", d.signedIn(http.HandlerFunc(d.me)))
-	mux.HandleFunc("POST /api/auth/link", d.requestLink)
+	mux.HandleFunc("POST /api/auth/link", d.limited(newLimiter(10, 15*time.Minute), d.requestLink))
 
 	member := func(pattern string, handler http.HandlerFunc) {
 		mux.Handle(pattern, d.signedIn(handler))
