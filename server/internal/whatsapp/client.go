@@ -417,6 +417,7 @@ func (c *Client) handleVote(e *events.Message) {
 		PollID:   messenger.MessageID(e.Message.GetPollUpdateMessage().GetPollCreationMessageKey().GetID()),
 		Selected: vote.GetSelectedOptions(),
 		FromMe:   e.Info.IsFromMe,
+		From:     messenger.Address(c.senderPhone(ctx, e.Info)),
 		Sender:   e.Info.PushName,
 	})
 }

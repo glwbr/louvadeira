@@ -50,7 +50,13 @@ type Bot struct {
 	Async func(task func())
 
 	mu      sync.Mutex
-	pending map[messenger.MessageID]*time.Timer
+	pending map[pendingKey]*time.Timer
+}
+
+// NOTE: A vote waits per poll and voter: in a group poll, one person's answer never replaces another's.
+type pendingKey struct {
+	poll  messenger.MessageID
+	voter messenger.Address
 }
 
 func (b *Bot) now() time.Time {
@@ -429,21 +435,22 @@ func (b *Bot) HandleVote(ctx context.Context, vote messenger.Vote) {
 		b.applyVote(ctx, vote)
 		return
 	}
-	waiting := store.PendingVote{PollID: string(vote.PollID), Selected: vote.Selected, FromMe: vote.FromMe}
+	waiting := store.PendingVote{PollID: string(vote.PollID), Voter: string(vote.From), Selected: vote.Selected, FromMe: vote.FromMe}
 	if err := b.Store.SavePendingVote(ctx, waiting, b.now()); err != nil {
 		b.Log.Error("guardar voto", "erro", err)
 	}
+	key := pendingKey{vote.PollID, vote.From}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.pending == nil {
-		b.pending = map[messenger.MessageID]*time.Timer{}
+		b.pending = map[pendingKey]*time.Timer{}
 	}
-	if timer, ok := b.pending[vote.PollID]; ok {
+	if timer, ok := b.pending[key]; ok {
 		timer.Stop()
 	}
-	b.pending[vote.PollID] = time.AfterFunc(b.Settle, func() {
+	b.pending[key] = time.AfterFunc(b.Settle, func() {
 		b.mu.Lock()
-		delete(b.pending, vote.PollID)
+		delete(b.pending, key)
 		b.mu.Unlock()
 		ctx := context.Background()
 		b.applyVote(ctx, vote)
@@ -462,7 +469,7 @@ func (b *Bot) ReplayPendingVotes(ctx context.Context) {
 		return
 	}
 	for _, v := range votes {
-		b.applyVote(ctx, messenger.Vote{PollID: messenger.MessageID(v.PollID), Selected: v.Selected, FromMe: v.FromMe})
+		b.applyVote(ctx, messenger.Vote{PollID: messenger.MessageID(v.PollID), Selected: v.Selected, FromMe: v.FromMe, From: messenger.Address(v.Voter)})
 		_ = b.Store.DeletePendingVote(ctx, v)
 	}
 }

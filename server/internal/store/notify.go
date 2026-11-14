@@ -300,6 +300,7 @@ func (s *Store) Poll(ctx context.Context, messageID string) (Poll, error) {
  */
 type PendingVote struct {
 	PollID   string
+	Voter    string
 	Selected [][]byte
 	FromMe   bool
 }
@@ -310,14 +311,14 @@ func (s *Store) SavePendingVote(ctx context.Context, vote PendingVote, now time.
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO pending_votes (poll_id, selected, from_me, received_at) VALUES (?, ?, ?, ?)
-		ON CONFLICT (poll_id) DO UPDATE SET selected = excluded.selected, from_me = excluded.from_me, received_at = excluded.received_at`,
-		vote.PollID, string(selected), boolInt(vote.FromMe), formatTime(now))
+		INSERT INTO pending_votes (poll_id, voter, selected, from_me, received_at) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT (poll_id, voter) DO UPDATE SET selected = excluded.selected, from_me = excluded.from_me, received_at = excluded.received_at`,
+		vote.PollID, vote.Voter, string(selected), boolInt(vote.FromMe), formatTime(now))
 	return err
 }
 
 func (s *Store) PendingVotes(ctx context.Context) ([]PendingVote, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT poll_id, selected, from_me FROM pending_votes ORDER BY received_at")
+	rows, err := s.db.QueryContext(ctx, "SELECT poll_id, voter, selected, from_me FROM pending_votes ORDER BY received_at")
 	if err != nil {
 		return nil, err
 	}
@@ -326,7 +327,7 @@ func (s *Store) PendingVotes(ctx context.Context) ([]PendingVote, error) {
 	for rows.Next() {
 		var vote PendingVote
 		var selected string
-		if err := rows.Scan(&vote.PollID, &selected, &vote.FromMe); err != nil {
+		if err := rows.Scan(&vote.PollID, &vote.Voter, &selected, &vote.FromMe); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(selected), &vote.Selected); err != nil {
@@ -345,7 +346,8 @@ func (s *Store) DeletePendingVote(ctx context.Context, vote PendingVote) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, "DELETE FROM pending_votes WHERE poll_id = ? AND selected = ?", vote.PollID, string(selected))
+	_, err = s.db.ExecContext(ctx, "DELETE FROM pending_votes WHERE poll_id = ? AND voter = ? AND selected = ?",
+		vote.PollID, vote.Voter, string(selected))
 	return err
 }
 

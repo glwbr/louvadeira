@@ -56,12 +56,14 @@ var ErrNotAllowed = errors.New("destino fora da lista de permissão do modo de t
 
 /**
  * NOTE: A Vote is a poll answer as it arrives: WhatsApp sends the SHA-256 of each chosen option, not its text.
- * FromMe marks votes cast from the linked phone itself.
+ * FromMe marks votes cast from the linked phone itself. From is the voter's phone, even when WhatsApp addressed them
+ * by LID, and empty when it cannot be told; Sender is the name they show on WhatsApp, for the log.
  */
 type Vote struct {
 	PollID   MessageID
 	Selected [][]byte
 	FromMe   bool
+	From     Address
 	Sender   string
 }
 

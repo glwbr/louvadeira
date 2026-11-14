@@ -325,3 +325,30 @@ func TestCommunionIsOneServiceAMonth(t *testing.T) {
 		t.Fatalf("a failed choice must not clear anything: morning = %v, evening = %v", m, e)
 	}
 }
+
+func TestVotesOnOnePollWaitPerVoter(t *testing.T) {
+	s, ctx := newStore(t), context.Background()
+	now := time.Date(2026, 11, 14, 9, 0, 0, 0, time.UTC)
+	ana := store.PendingVote{PollID: "poll-1", Voter: "5511988880001", Selected: [][]byte{{1}}}
+	bia := store.PendingVote{PollID: "poll-1", Voter: "5511988880002", Selected: [][]byte{{2}}}
+	changed := store.PendingVote{PollID: "poll-1", Voter: "5511988880001", Selected: [][]byte{{3}}}
+	for _, v := range []store.PendingVote{ana, bia, changed} {
+		if err := s.SavePendingVote(ctx, v, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.DeletePendingVote(ctx, ana); err != nil {
+		t.Fatal(err)
+	}
+	votes, err := s.PendingVotes(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	latest := map[string]byte{}
+	for _, v := range votes {
+		latest[v.Voter] = v.Selected[0][0]
+	}
+	if len(votes) != 2 || latest[ana.Voter] != 3 || latest[bia.Voter] != 2 {
+		t.Fatalf("each voter should keep their latest vote: %+v", votes)
+	}
+}
