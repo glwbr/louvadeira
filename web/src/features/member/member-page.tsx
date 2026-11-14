@@ -1,12 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { CalendarDays, CalendarOff, Check, Hourglass, Plus, X } from "lucide-react"
+import { ArrowLeftRight, CalendarDays, CalendarOff, Check, Hourglass, Loader2, Plus, X } from "lucide-react"
+import { AnimatePresence, motion } from "motion/react"
 import { useState } from "react"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
+import { CommunionTag } from "@/components/communion-tag"
 import { ConfirmButton } from "@/components/confirm-button"
+import { DateBlock } from "@/components/date-block"
 import { EmptyState } from "@/components/empty-state"
-import { ListSkeleton } from "@/components/list-skeleton"
+import { ErrorState } from "@/components/error-state"
+import { CardSkeleton, ListSkeleton } from "@/components/list-skeleton"
+import { EASE_OUT, quick, Reveal, RevealItem, spring } from "@/components/motion"
+import { RoleIcon } from "@/components/role-icon"
 import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import { api, queryKeys, type MemberSlot, type Unavailability } from "@/lib/api"
 import { toastError } from "@/lib/errors"
 import { absenceLabel, firstName, formatDay, reasonLabel, weekdayOf } from "@/lib/format"
@@ -18,6 +26,7 @@ type Service = {
   key: string
   date: string
   startTime: string
+  serviceName: string
   ministryName: string
   communion: boolean
   roles: string[]
@@ -38,6 +47,7 @@ function groupByService(slots: MemberSlot[]): Service[] {
       key,
       date: slot.date,
       startTime: slot.startTime,
+      serviceName: slot.serviceName,
       ministryName: slot.ministryName,
       communion: slot.communion,
       roles: [slot.roleName],
@@ -48,187 +58,288 @@ function groupByService(slots: MemberSlot[]): Service[] {
 }
 
 export function MemberPage() {
+  const { t } = useTranslation()
   const me = useQuery({ queryKey: queryKeys.me, queryFn: api.me })
   const slots = useQuery({ queryKey: queryKeys.mySlots, queryFn: api.mine.slots })
   const absences = useQuery({ queryKey: queryKeys.myAbsences, queryFn: api.mine.absences })
 
   return (
-    <div className="flex flex-col gap-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Oi, {firstName(me.data?.name ?? "")}! 👋</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Aqui ficam as suas escalas. Se não puder ir, é só avisar por aqui.
-        </p>
-      </div>
+    <div className="flex flex-col gap-10">
+      <Reveal>
+        <h1 className="font-display text-[2rem] leading-[1.1] font-semibold text-balance">
+          {me.data ? t("member.greeting", { name: firstName(me.data.name) }) : <Skeleton className="h-9 w-44" />}
+        </h1>
+        <p className="mt-2 max-w-prose text-sm text-pretty text-muted-foreground">{t("member.lead")}</p>
+      </Reveal>
 
-      <section className="flex flex-col gap-3">
-        <h2 className="font-medium">Suas próximas escalas</h2>
+      <section aria-labelledby="my-services" className="flex flex-col gap-3">
+        <h2 id="my-services" className="text-lg font-semibold">
+          {t("member.upcoming")}
+        </h2>
         {slots.isPending ? (
-          <ListSkeleton rows={2} />
-        ) : !slots.data?.length ? (
-          <EmptyState icon={CalendarDays} title="Nada por enquanto">
-            Você não está em nenhuma escala publicada nos próximos meses.
+          <div className="flex flex-col gap-3">
+            <CardSkeleton />
+            <CardSkeleton />
+          </div>
+        ) : slots.isError ? (
+          <ErrorState error={slots.error} onRetry={() => void slots.refetch()} retrying={slots.isFetching} />
+        ) : slots.data.length === 0 ? (
+          <EmptyState icon={CalendarDays} title={t("member.emptyTitle")}>
+            {t("member.empty")}
           </EmptyState>
         ) : (
           <ul className="flex flex-col gap-3">
-            {groupByService(slots.data).map((service) => (
-              <ServiceCard key={service.key} service={service} />
+            {groupByService(slots.data).map((service, index) => (
+              <RevealItem key={service.key} index={index} layout="position">
+                <ServiceCard service={service} />
+              </RevealItem>
             ))}
           </ul>
         )}
       </section>
 
-      <AbsencesSection absences={absences.data} loading={absences.isPending} />
+      <AbsencesSection
+        absences={absences.data}
+        loading={absences.isPending}
+        error={absences.isError ? absences.error : null}
+        onRetry={() => void absences.refetch()}
+      />
     </div>
   )
 }
 
+function masculineDay(date: string): boolean {
+  const day = new Date(`${date}T12:00:00`).getDay()
+  return day === 0 || day === 6
+}
+
 function ServiceCard({ service }: { service: Service }) {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const ids = service.slots.map((slot) => slot.assignmentId)
   const declined = service.slots.every((slot) => slot.status === "declined")
   const confirmed = service.slots.every((slot) => slot.status === "confirmed")
   const searching = service.slots.some((slot) => slot.coverOpen)
+  const day = `${weekdayOf(service.date).toLowerCase()}, ${formatDay(service.date)}`
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["mine"] })
   const confirm = useMutation({
     mutationFn: () => api.mine.confirm(ids),
     onSuccess: () => {
-      toast.success(declined ? "Que bom! Você está de volta na escala 🙌" : "Que bom! Tá confirmado 🙌")
+      toast.success(declined ? t("member.back") : t("member.confirmed"))
       refresh()
     },
     onError: toastError,
   })
   const decline = useMutation({
     mutationFn: () => api.mine.decline(ids.filter((_, i) => service.slots[i].status !== "declined")),
-    onSuccess: () => {
-      toast.success("Tudo bem, obrigado por avisar! Já estamos procurando quem fique no seu lugar.")
+    onSuccess: (requests) => {
+      const invited = requests.some((request) => request.invites.length > 0)
+      toast.success(invited ? t("member.declinedSearching") : t("member.declinedNobody"))
       refresh()
     },
     onError: toastError,
   })
-  const day = `${weekdayOf(service.date).toLowerCase()}, ${formatDay(service.date)}`
 
   return (
-    <li className="rounded-xl border bg-card p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="font-medium">
-            {weekdayOf(service.date)}, {formatDay(service.date)} · {service.startTime.replace(":", "h")}
+    <article
+      className={cn(
+        "rounded-2xl border bg-card p-4 transition-[border-color,box-shadow] duration-500",
+        confirmed && "border-success/35 shadow-[0_0_0_1px_color-mix(in_oklch,var(--success)_12%,transparent)]"
+      )}
+    >
+      <div className="flex gap-4">
+        <DateBlock date={service.date} startTime={service.startTime} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
+            <h3 className="min-w-0 font-medium text-pretty">
+              {service.serviceName}
+              <span className="sr-only">, {day}</span>
+            </h3>
+            <Status confirmed={confirmed} declined={declined} searching={searching} />
+          </div>
+          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+            <span>{service.ministryName}</span>
+            {service.roles.map((role) => (
+              <span key={role} className="inline-flex items-center gap-1">
+                <RoleIcon name={role} className="size-3.5" aria-hidden />
+                {role}
+              </span>
+            ))}
           </p>
-          <p className="text-sm text-muted-foreground">
-            {service.ministryName} · {service.roles.join(" e ")}
-            {service.communion && " · 🍷 Santa Ceia"}
-          </p>
+          {service.communion && <CommunionTag className="mt-1.5" />}
         </div>
-        <Status confirmed={confirmed} declined={declined} searching={searching} />
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        {declined ? (
-          <Button size="sm" variant="outline" disabled={confirm.isPending} onClick={() => confirm.mutate()}>
-            Consigo ir, afinal
-          </Button>
-        ) : (
-          <>
-            {!confirmed && (
-              <Button size="sm" disabled={confirm.isPending} onClick={() => confirm.mutate()}>
-                <Check />
-                Vou estar lá
-              </Button>
-            )}
-            <ConfirmButton
-              tone="outline"
-              label="Não vou conseguir"
-              title={`Não vai conseguir ir ${day.startsWith("sábado") || day.startsWith("domingo") ? "no" : "na"} ${day}?`}
-              description="Tudo bem! A gente avisa a liderança e chama alguém da equipe para ficar no seu lugar."
-              onConfirm={() => decline.mutate()}
-              pending={decline.isPending}
-            />
-          </>
+      <AnimatePresence initial={false}>
+        {!confirmed && (
+          <motion.div
+            key="actions"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0, transition: { duration: 0.25, ease: EASE_OUT } }}
+            className="overflow-hidden"
+          >
+            <div className="flex flex-wrap gap-2 pt-4">
+              {declined ? (
+                <Button variant="outline" className="flex-1 sm:flex-none" disabled={confirm.isPending} onClick={() => confirm.mutate()}>
+                  {confirm.isPending && <Loader2 className="animate-spin" />}
+                  {t("member.comeBack")}
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    className="flex-1 sm:flex-none"
+                    disabled={confirm.isPending}
+                    aria-label={t("member.confirmLabel", { day })}
+                    onClick={() => confirm.mutate()}
+                  >
+                    {confirm.isPending ? <Loader2 className="animate-spin" /> : <Check />}
+                    {t("member.confirm")}
+                  </Button>
+                  <ConfirmButton
+                    tone="outline"
+                    className="flex-1 sm:flex-none"
+                    label={t("member.decline")}
+                    aria-label={t("member.declineLabel", { day })}
+                    title={t(masculineDay(service.date) ? "member.declineTitleMasculine" : "member.declineTitleFeminine", { day })}
+                    description={t("member.declineLead")}
+                    onConfirm={() => decline.mutate()}
+                    pending={decline.isPending}
+                  />
+                </>
+              )}
+            </div>
+          </motion.div>
         )}
-      </div>
-    </li>
+      </AnimatePresence>
+    </article>
   )
 }
 
 function Status({ confirmed, declined, searching }: { confirmed: boolean; declined: boolean; searching: boolean }) {
-  const [label, tone, Icon] = declined
-    ? searching
-      ? ["Procurando substituto", "text-amber-400", Hourglass]
-      : ["A liderança já sabe", "text-muted-foreground", CalendarOff]
-    : confirmed
-      ? ["Confirmado", "text-emerald-400", Check]
-      : ["Falta responder", "text-amber-400", Hourglass]
+  const { t } = useTranslation()
+  const state = declined ? (searching ? "searching" : "leadersKnow") : confirmed ? "confirmed" : "pending"
   return (
-    <span className={cn("flex shrink-0 items-center gap-1 text-xs font-medium", tone)}>
-      <Icon className="size-3.5" />
-      {label}
-    </span>
+    <AnimatePresence mode="popLayout" initial={false}>
+      <motion.span
+        key={state}
+        initial={{ opacity: 0, scale: 0.85 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.85 }}
+        transition={spring}
+        className={cn(
+          "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
+          state === "confirmed" && "bg-success/12 text-success",
+          state === "searching" && "bg-warning/12 text-warning",
+          state === "leadersKnow" && "bg-secondary text-muted-foreground",
+          state === "pending" && "bg-secondary text-secondary-foreground"
+        )}
+      >
+        {state === "confirmed" ? (
+          <DrawnCheck />
+        ) : state === "searching" ? (
+          <Hourglass className="size-3.5" />
+        ) : state === "leadersKnow" ? (
+          <CalendarOff className="size-3.5" />
+        ) : (
+          <span className="size-1.5 rounded-full bg-brand" />
+        )}
+        {t(`member.status.${state}`)}
+      </motion.span>
+    </AnimatePresence>
   )
 }
 
-function AbsencesSection({ absences, loading }: { absences?: Unavailability[]; loading: boolean }) {
+/**
+ * NOTE: The one authored moment of the member page: confirming draws the check instead of swapping an icon.
+ */
+function DrawnCheck() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <motion.path d="M5 12.5l4.5 4.5L19 7.5" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ ...quick, duration: 0.45, delay: 0.1 }} />
+    </svg>
+  )
+}
+
+function AbsencesSection({
+  absences,
+  loading,
+  error,
+  onRetry,
+}: {
+  absences?: Unavailability[]
+  loading: boolean
+  error: Error | null
+  onRetry: () => void
+}) {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [adding, setAdding] = useState(false)
   const [coversFor, setCoversFor] = useState<Unavailability>()
   const remove = useMutation({
     mutationFn: (id: number) => api.mine.removeAbsence(id),
     onSuccess: () => {
-      toast.success("Removido")
+      toast.success(t("member.removed"))
       queryClient.invalidateQueries({ queryKey: ["mine"] })
     },
     onError: toastError,
   })
 
   return (
-    <section className="flex flex-col gap-3">
+    <section aria-labelledby="my-absences" className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="font-medium">Quando não posso</h2>
+        <h2 id="my-absences" className="text-lg font-semibold">
+          {t("member.absences")}
+        </h2>
         <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
           <Plus />
-          Avisar
+          {t("member.addAbsence")}
         </Button>
       </div>
       {loading ? (
         <ListSkeleton rows={1} />
+      ) : error ? (
+        <ErrorState error={error} onRetry={onRetry} />
       ) : !absences?.length ? (
-        <p className="text-sm text-muted-foreground">
-          Vai viajar, tem plantão ou algo que se repete, como faculdade às quintas? Avise aqui e a gente não coloca você
-          na escala nesses dias.
-        </p>
+        <p className="rounded-2xl border border-dashed px-4 py-5 text-sm text-pretty text-muted-foreground">{t("member.absencesEmpty")}</p>
       ) : (
-        <ul className="divide-y rounded-xl border bg-card">
-          {absences.map((u) => (
-            <li key={u.id} className="flex items-center gap-3 px-4 py-3">
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">{absenceLabel(u)}</p>
-                <p className="text-xs text-muted-foreground">{u.fromPoll ? "Pela enquete" : reasonLabel(u.reason)}</p>
+        <ul className="divide-y rounded-2xl border bg-card">
+          {absences.map((u, index) => (
+            <RevealItem key={u.id} index={index} className="flex flex-col gap-2 px-4 py-3">
+              <div className="flex items-center gap-3">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-brand">
+                  <CalendarOff className="size-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-pretty">{absenceLabel(u)}</p>
+                  <p className="text-xs text-muted-foreground">{u.fromPoll ? t("member.fromPoll") : reasonLabel(u.reason)}</p>
+                </div>
+                <ConfirmButton
+                  size="icon-sm"
+                  icon={<X />}
+                  label={null}
+                  className="text-muted-foreground hover:text-danger"
+                  aria-label={t("member.removeLabel", { label: absenceLabel(u) })}
+                  confirmLabel={t("member.remove")}
+                  title={t("member.removeTitle")}
+                  description={t("member.removeLead", { label: absenceLabel(u) })}
+                  onConfirm={() => remove.mutate(u.id)}
+                  pending={remove.isPending && remove.variables === u.id}
+                />
               </div>
               {u.scheduled > 0 && (
-                <Button size="sm" variant="outline" onClick={() => setCoversFor(u)}>
-                  Procurar substituto
+                <Button size="sm" variant="outline" className="self-start sm:ml-12" onClick={() => setCoversFor(u)}>
+                  <ArrowLeftRight />
+                  {t("member.findCover")}
                 </Button>
               )}
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={`Remover ${absenceLabel(u)}`}
-                disabled={remove.isPending}
-                onClick={() => remove.mutate(u.id)}
-              >
-                <X />
-              </Button>
-            </li>
+            </RevealItem>
           ))}
         </ul>
       )}
       <MyAbsenceDialog open={adding} onOpenChange={setAdding} />
-      <MyAbsenceDialog
-        open={Boolean(coversFor)}
-        onOpenChange={(next) => !next && setCoversFor(undefined)}
-        absence={coversFor}
-      />
+      <MyAbsenceDialog open={Boolean(coversFor)} onOpenChange={(next) => !next && setCoversFor(undefined)} absence={coversFor} />
     </section>
   )
 }

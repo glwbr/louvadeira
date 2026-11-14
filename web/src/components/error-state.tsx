@@ -31,7 +31,7 @@ export function ErrorState({ error, onRetry, retrying = false, title, className 
         </Button>
       }
     >
-      {error?.message}
+      {error?.message && <span className="block first-letter:uppercase">{error.message}</span>}
     </EmptyState>
   )
 }
