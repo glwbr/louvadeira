@@ -130,6 +130,43 @@ func TestAnAbsenceWithoutServicesIsNotedForTheLeaders(t *testing.T) {
 	}
 }
 
+func TestShortTextRepliesAnswerTheLatestPoll(t *testing.T) {
+	w := newWorld(t)
+	w.bot.Tick(context.Background())
+	sunday := w.slotOf("2026-11-15", "Baixo").PersonName
+	other := map[string]string{"Edu": "Fred", "Fred": "Edu"}[sunday]
+
+	w.says(sunday, "ok")
+	if slot := w.slotOf("2026-11-15", "Baixo"); slot.Status != store.AssignmentScheduled {
+		t.Fatalf("\"ok\" answered the poll: %+v", slot)
+	}
+	w.says(sunday, "Não vou")
+	if slot := w.slotOf("2026-11-15", "Baixo"); slot.Status != store.AssignmentDeclined || !slot.CoverOpen {
+		t.Fatalf("after \"não vou\": %+v", slot)
+	}
+	w.says(other, "Consigo!")
+	if slot := w.slotOf("2026-11-15", "Baixo"); slot.PersonName != other || slot.Status != store.AssignmentConfirmed {
+		t.Fatalf("after \"consigo\": %+v", slot)
+	}
+}
+
+func TestShortTextRepliesOnAWeekWithTwoServices(t *testing.T) {
+	w := newWorld(t)
+	w.bot.Tick(context.Background())
+	thursday := w.slotOf("2026-11-19", "Baixo").PersonName
+	w.fake.reset()
+	w.says(thursday, "não")
+	if !containsText(w.fake.to(w.phone(thursday)), "é só marcar na enquete") || w.slotOf("2026-11-19", "Baixo").Status != store.AssignmentScheduled {
+		t.Fatalf("a plain no for a week with two services = %+v", w.fake.sent)
+	}
+	w.says(thursday, "sim")
+	for _, date := range []string{"2026-11-19", "2026-11-22"} {
+		if slot := w.slotOf(date, "Baixo"); slot.Status != store.AssignmentConfirmed {
+			t.Fatalf("%s after \"sim\" = %+v", date, slot)
+		}
+	}
+}
+
 func TestALeaderAwayHearsWhatHasNoSubstitute(t *testing.T) {
 	w := newWorld(t)
 	ctx := context.Background()

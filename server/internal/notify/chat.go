@@ -22,6 +22,16 @@ const (
  * anything that is not a command, get no answer: the number also carries ordinary church conversations.
  */
 func (b *Bot) HandleText(ctx context.Context, msg messenger.Incoming) {
+	if yes, ok := parseReply(msg.Text); ok {
+		person, err := b.Store.PersonByPhone(ctx, string(msg.From))
+		if err != nil {
+			return
+		}
+		if b.answerByText(ctx, person, yes) {
+			b.Log.Info("resposta por texto", "pessoa", person.Name, "sim", yes)
+			return
+		}
+	}
 	cmd, ok := parseCommand(msg.Text, b.now())
 	if !ok {
 		return
@@ -353,5 +363,92 @@ func (b *Bot) registerAbsence(ctx context.Context, person store.Person, ranges [
 	}
 	if _, err := b.decline(ctx, ids, true, absence{period: label}); err != nil {
 		b.Log.Error("abrir trocas da ausência", "erro", err)
+	}
+}
+
+// CONSTRAINT: A short "sim" or "não" only answers a poll sent in the last two days; older ones need a tap.
+const replyWindow = 48 * time.Hour
+
+var (
+	yesReplies = map[string]bool{"sim": true, "vou": true, "vou sim": true, "sim vou": true, "confirmo": true, "confirmado": true,
+		"confirmada": true, "estarei la": true, "vou estar la": true, "pode contar comigo": true, "to dentro": true,
+		"consigo": true, "consigo sim": true, "posso": true, "posso sim": true}
+	noReplies = map[string]bool{"nao": true, "nao vou": true, "nao posso": true, "nao consigo": true, "nao vou conseguir": true,
+		"nao vou poder": true, "nao da": true, "nao vai dar": true, "infelizmente nao": true, "dessa vez nao": true}
+)
+
+/**
+ * NOTE: Reads a short yes or no typed instead of tapping a poll option. Anything longer is not a reply.
+ */
+func parseReply(text string) (yes bool, ok bool) {
+	t := normalizeText(text)
+	switch {
+	case yesReplies[t]:
+		return true, true
+	case noReplies[t]:
+		return false, true
+	}
+	return false, false
+}
+
+/**
+ * NOTE: Applies a typed yes or no to the person's latest weekly confirmation or invitation to cover, when the answer
+ * is unambiguous; otherwise it points them to the poll. Reports whether the text was taken as a reply.
+ */
+func (b *Bot) answerByText(ctx context.Context, person store.Person, yes bool) bool {
+	polls, err := b.Store.PersonRecentPolls(ctx, person.ID, b.now().Add(-replyWindow))
+	if err != nil {
+		b.Log.Error("buscar enquetes recentes", "erro", err)
+		return false
+	}
+	for _, poll := range polls {
+		switch {
+		case poll.Kind == store.PollCover:
+			b.answerCoverByText(ctx, person, poll, yes)
+			return true
+		case hasAction(poll.Options, actionConfirm):
+			b.answerConfirmByText(ctx, person, poll, yes)
+			return true
+		}
+	}
+	return false
+}
+
+func (b *Bot) answerConfirmByText(ctx context.Context, person store.Person, poll store.Poll, yes bool) {
+	var declines []store.PollOption
+	for _, o := range poll.Options {
+		switch {
+		case yes && o.Action == actionConfirm:
+			b.confirm(ctx, person, o.Assignments, true)
+			return
+		case o.Action == actionDecline:
+			declines = append(declines, o)
+		}
+	}
+	if !yes && len(declines) == 1 {
+		b.declineOwn(ctx, person, declines[0].Assignments)
+		return
+	}
+	b.send(ctx, person.Phone, pickInPollHint(false))
+}
+
+func (b *Bot) answerCoverByText(ctx context.Context, person store.Person, poll store.Poll, yes bool) {
+	var accepts []store.PollOption
+	var refuse *store.PollOption
+	for i, o := range poll.Options {
+		switch o.Action {
+		case actionAccept:
+			accepts = append(accepts, o)
+		case actionRefuse:
+			refuse = &poll.Options[i]
+		}
+	}
+	switch {
+	case yes && len(accepts) == 1:
+		b.answerCover(ctx, person, poll.Options, accepts)
+	case !yes && refuse != nil:
+		b.answerCover(ctx, person, poll.Options, []store.PollOption{*refuse})
+	default:
+		b.send(ctx, person.Phone, pickInPollHint(true))
 	}
 }

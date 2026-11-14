@@ -239,6 +239,32 @@ func (s *Store) PersonCoverPolls(ctx context.Context, personID int64) ([]Poll, e
 	return polls, rows.Err()
 }
 
+/**
+ * NOTE: Polls sent to a person since a moment, newest first.
+ */
+func (s *Store) PersonRecentPolls(ctx context.Context, personID int64, since time.Time) ([]Poll, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT message_id, kind, person_id, options FROM polls
+		WHERE person_id = ? AND created_at >= ? ORDER BY created_at DESC, rowid DESC LIMIT 10`, personID, formatTime(since))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var polls []Poll
+	for rows.Next() {
+		var poll Poll
+		var options string
+		if err := rows.Scan(&poll.MessageID, &poll.Kind, &poll.PersonID, &options); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(options), &poll.Options); err != nil {
+			return nil, err
+		}
+		polls = append(polls, poll)
+	}
+	return polls, rows.Err()
+}
+
 func (s *Store) UpdatePollOptions(ctx context.Context, messageID string, options []PollOption) error {
 	encoded, err := json.Marshal(options)
 	if err != nil {

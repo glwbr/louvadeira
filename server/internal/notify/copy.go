@@ -247,7 +247,7 @@ func helpText(name string) string {
 		"• *escala*: para ver quando você está na escala\n"+
 		"• *não posso dia 19*: para avisar que não vai conseguir ir num culto\n"+
 		"• *não posso de 10/12 a 20/12*: para avisar que vai ficar fora um tempo\n"+
-		"Para confirmar presença, é só responder as enquetes que eu mando 🙂", firstName(name))
+		"Para confirmar presença, é só responder as enquetes que eu mando, ou escrever *sim* ou *não* logo depois delas 🙂", firstName(name))
 }
 
 func scheduleText(lines []string) string {
@@ -298,6 +298,13 @@ func keptReply() string {
 
 func alreadyToldReply() string {
 	return "Eu já tinha avisado a liderança 🙂 Se mudou de ideia, fala com a liderança."
+}
+
+func pickInPollHint(accepting bool) string {
+	if accepting {
+		return "🙂 Para dizer em quais cultos você consegue, é só marcar na enquete que eu mandei."
+	}
+	return "🙂 Para dizer em qual culto você não consegue, é só marcar na enquete que eu mandei."
 }
 
 const (
