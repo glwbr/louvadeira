@@ -16,7 +16,7 @@ import {
   type Unavailability,
 } from "@/lib/api"
 import { toastError } from "@/lib/errors"
-import { formatDay, weekdayOf } from "@/lib/format"
+import { absenceCovers, formatDay, weekdayOf } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 export type SlotSelection = {
@@ -101,7 +101,7 @@ function SlotPicker({
   )
   const unavailable = new Set(
     unavailabilities
-      .filter((u) => u.startDate <= service.date && service.date <= u.endDate)
+      .filter((u) => absenceCovers(u, service.date))
       .map((u) => u.personId)
   )
   const withRole = ministry.members.filter((m) => m.roles.some((r) => r.roleId === role.roleId))

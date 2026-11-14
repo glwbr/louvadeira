@@ -30,7 +30,7 @@ import { ApiError, api, queryKeys, type CoverRequest, type ScheduleSlot, type Sc
 import { toastError } from "@/lib/errors"
 import {
   REASON_LABEL,
-  formatDateRange,
+  absenceLabel,
   formatDay,
   monthBounds,
   monthLabel,
@@ -327,7 +327,7 @@ function UnavailabilityCard({ list, defaultDate }: { list: Unavailability[]; def
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{u.personName}</p>
                 <p className="text-xs text-muted-foreground">
-                  {formatDateRange(u.startDate, u.endDate)} · {REASON_LABEL[u.reason]}
+                  {absenceLabel(u)} · {REASON_LABEL[u.reason]}
                 </p>
               </div>
               {u.scheduled > 0 && (

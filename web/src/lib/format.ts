@@ -1,4 +1,4 @@
-import type { Reason, RotationUnit, Service } from "@/lib/api"
+import type { Reason, RotationUnit, Service, Unavailability } from "@/lib/api"
 
 export const WEEKDAYS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"] as const
 
@@ -68,6 +68,44 @@ export function monthBounds(month: string): { from: string; to: string } {
 
 export function formatDateRange(start: string, end: string): string {
   return start === end ? formatDay(start) : `${formatDay(start)} a ${formatDay(end)}`
+}
+
+const WEEKDAYS_LOWER = WEEKDAYS.map((day) => day.toLowerCase())
+
+function masculine(weekday: number): boolean {
+  return weekday === 0 || weekday === 6
+}
+
+/**
+ * NOTE: How an absence reads in a list: "03/12 a 31/12", "Toda quinta até 31/03" or "Todo 1º domingo do mês".
+ */
+export function absenceLabel(u: Pick<Unavailability, "startDate" | "endDate" | "repeat" | "weekday" | "weekOfMonth">): string {
+  if (u.repeat === "none" || u.weekday === null) {
+    return formatDateRange(u.startDate, u.endDate)
+  }
+  const day = WEEKDAYS_LOWER[u.weekday]
+  let label = masculine(u.weekday) ? `Todo ${day}` : `Toda ${day}`
+  if (u.repeat === "monthly" && u.weekOfMonth) {
+    label = masculine(u.weekday) ? `Todo ${u.weekOfMonth}º ${day} do mês` : `Toda ${u.weekOfMonth}ª ${day} do mês`
+  }
+  return u.endDate ? `${label} até ${formatDay(u.endDate)}` : label
+}
+
+/**
+ * NOTE: Mirrors the server: a repeating absence only covers its weekday (and week of the month) inside its range.
+ */
+export function absenceCovers(u: Unavailability, date: string): boolean {
+  if (date < u.startDate || (u.endDate && date > u.endDate)) {
+    return false
+  }
+  if (u.repeat === "none") {
+    return true
+  }
+  const day = parseDate(date)
+  if (day.getDay() !== u.weekday) {
+    return false
+  }
+  return u.repeat === "weekly" || Math.floor((day.getDate() - 1) / 7) + 1 === u.weekOfMonth
 }
 
 export const REASON_LABEL: Record<Reason, string> = {

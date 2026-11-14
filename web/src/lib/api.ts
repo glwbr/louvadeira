@@ -144,13 +144,19 @@ export type ScheduleView = {
 
 export type Reason = "viagem" | "trabalho" | "saude" | "familia" | "estudos" | "outro"
 
+export type Repeat = "none" | "weekly" | "monthly"
+
 export type Unavailability = {
   id: number
   personId: number
   personName: string
   startDate: string
+  /** NOTE: Empty when a repeating absence has no end. */
   endDate: string
   reason: Reason
+  repeat: Repeat
+  weekday: number | null
+  weekOfMonth: number | null
   /** NOTE: Services the person still holds in published schedules during the absence, swaps not opened yet. */
   scheduled: number
 }
