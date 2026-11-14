@@ -255,6 +255,7 @@ func (s *Store) CoverCandidates(ctx context.Context, assignmentID int64) ([]Pers
 		return nil, err
 	}
 	since, _ := time.Parse("2006-01-02", d.Date)
+	weekday, week := int(since.Weekday()), nthWeekdayOfMonth(d.Date)
 	return s.queryPeople(ctx, `
 		SELECT `+personColumnsP+` FROM people p
 		JOIN member_roles mr ON mr.person_id = p.id AND mr.role_id = ?
@@ -263,7 +264,8 @@ func (s *Store) CoverCandidates(ctx context.Context, assignmentID int64) ([]Pers
 		      SELECT a.person_id FROM assignments a
 		      WHERE a.service_id = ? AND a.service_date = ? AND a.person_id IS NOT NULL)
 		  AND p.id NOT IN (
-		      SELECT u.person_id FROM unavailabilities u WHERE u.start_date <= ? AND u.end_date >= ?)
+		      SELECT u.person_id FROM unavailabilities u WHERE u.start_date <= ? AND u.end_date >= ?
+		        AND (u.repeat = 'none' OR (u.weekday = ? AND (u.repeat = 'weekly' OR u.week_of_month = ?))))
 		  AND p.id NOT IN (
 		      SELECT cr.absent_person_id FROM cover_requests cr
 		      JOIN assignments a ON a.id = cr.assignment_id
@@ -272,7 +274,7 @@ func (s *Store) CoverCandidates(ctx context.Context, assignmentID int64) ([]Pers
 		      SELECT count(*) FROM assignments a2 JOIN schedules s2 ON s2.id = a2.schedule_id
 		      WHERE a2.person_id = p.id AND s2.status = 'published'
 		        AND a2.service_date BETWEEN ? AND ?), p.name`,
-		d.RoleID, d.PersonID, d.ServiceID, d.Date, d.Date, d.Date, d.ServiceID, d.Date,
+		d.RoleID, d.PersonID, d.ServiceID, d.Date, d.Date, d.Date, weekday, week, d.ServiceID, d.Date,
 		since.AddDate(0, 0, -7*historyWeeks).Format("2006-01-02"), d.Date)
 }
 

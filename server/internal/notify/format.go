@@ -105,14 +105,34 @@ func slotText(d store.AssignmentDetail) string {
 	return fmt.Sprintf("%s (%s)", when(d), d.RoleName)
 }
 
+var weekdaysPlural = []string{"domingos", "segundas", "terças", "quartas", "quintas", "sextas", "sábados"}
+
 /**
- * NOTE: "de 16/11 a 13/12", or "em 19/11" for a single day; it follows "não poderá servir no Louvor".
+ * NOTE: How an absence reads after "não vai poder servir no Louvor": "de 16/11 a 13/12", "em 19/11", "às quintas
+ * até 31/03" or "no 1º domingo do mês".
  */
-func periodText(start, end string) string {
-	if start == end {
-		return "em " + dayMonth(start)
+func absenceText(u store.Unavailability) string {
+	var text string
+	switch {
+	case u.Repeat == store.RepeatWeekly && u.Weekday != nil:
+		text = "às " + weekdaysPlural[*u.Weekday]
+		if *u.Weekday == 0 || *u.Weekday == 6 {
+			text = "aos " + weekdaysPlural[*u.Weekday]
+		}
+	case u.Repeat == store.RepeatMonthly && u.Weekday != nil && u.WeekOfMonth != nil:
+		text = fmt.Sprintf("na %dª %s do mês", *u.WeekOfMonth, weekdays[*u.Weekday])
+		if *u.Weekday == 0 || *u.Weekday == 6 {
+			text = fmt.Sprintf("no %dº %s do mês", *u.WeekOfMonth, weekdays[*u.Weekday])
+		}
+	case u.StartDate == u.EndDate:
+		return "em " + dayMonth(u.StartDate)
+	default:
+		return fmt.Sprintf("de %s a %s", dayMonth(u.StartDate), dayMonth(u.EndDate))
 	}
-	return fmt.Sprintf("de %s a %s", dayMonth(start), dayMonth(end))
+	if u.EndDate != "" {
+		text += " até " + dayMonth(u.EndDate)
+	}
+	return text
 }
 
 var reasonLabels = map[store.Reason]string{

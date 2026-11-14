@@ -43,16 +43,16 @@ func (b *Bot) Decline(ctx context.Context, assignmentIDs []int64, byMember bool)
 func (b *Bot) AffectedBy(ctx context.Context, u store.Unavailability) ([]store.AssignmentDetail, error) {
 	now := b.now()
 	from := max(u.StartDate, now.Format("2006-01-02"))
-	if from > u.EndDate {
+	if from > u.Until() {
 		return nil, nil
 	}
-	slots, err := b.Store.PersonAssignments(ctx, u.PersonID, from, u.EndDate)
+	slots, err := b.Store.PersonAssignments(ctx, u.PersonID, from, u.Until())
 	if err != nil {
 		return nil, err
 	}
 	var future []store.AssignmentDetail
 	for _, d := range slots {
-		if b.serviceTime(d).After(now) {
+		if u.Covers(d.Date) && b.serviceTime(d).After(now) {
 			future = append(future, d)
 		}
 	}
@@ -71,7 +71,7 @@ func (b *Bot) DeclinePeriod(ctx context.Context, u store.Unavailability) ([]stor
 	for i, d := range slots {
 		ids[i] = d.AssignmentID
 	}
-	return b.decline(ctx, ids, false, absence{period: periodText(u.StartDate, u.EndDate), reason: reasonLabel(u.Reason)})
+	return b.decline(ctx, ids, false, absence{period: absenceText(u), reason: reasonLabel(u.Reason)})
 }
 
 func (b *Bot) decline(ctx context.Context, assignmentIDs []int64, byMember bool, why absence) ([]store.CoverRequest, error) {

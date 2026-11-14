@@ -139,3 +139,42 @@ func TestAbsenceOpensSwapsForEveryServiceInThePeriod(t *testing.T) {
 		t.Fatalf("still affected after opening swaps: %+v", left)
 	}
 }
+
+func TestRepeatingAbsenceOnlyCountsMatchingDays(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	bassist := w.slotOf("2026-11-19", "Baixo").PersonName
+	other := map[string]string{"Edu": "Fred", "Fred": "Edu"}[bassist]
+	thursday := 4
+	absence, err := w.store.CreateUnavailability(ctx, store.UnavailabilityInput{
+		PersonID: w.people[bassist].ID, StartDate: "2026-11-14", Repeat: store.RepeatWeekly, Weekday: &thursday, Reason: store.ReasonStudies,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	slots, err := w.bot.AffectedBy(ctx, absence)
+	if err != nil || len(slots) == 0 {
+		t.Fatalf("affected = %+v, err = %v", slots, err)
+	}
+	for _, d := range slots {
+		if d.Date != "2026-11-19" && d.Date != "2026-11-26" {
+			t.Fatalf("a Thursday absence affects %s", d.Date)
+		}
+	}
+
+	if _, err := w.store.CreateUnavailability(ctx, store.UnavailabilityInput{
+		PersonID: w.people[other].ID, StartDate: "2026-11-14", Repeat: store.RepeatWeekly, Weekday: &thursday, Reason: store.ReasonWork,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.bot.DeclinePeriod(ctx, absence); err != nil {
+		t.Fatal(err)
+	}
+	if invites := polls(w.fake.to(w.phone(other))); len(invites) != 0 {
+		t.Fatalf("%s cannot do Thursdays either but was invited: %+v", other, invites)
+	}
+	if leader := w.fake.to(w.phone("Líder")); len(leader) != 1 || !strings.Contains(leader[0].text, bassist+" não vai poder servir no Louvor às quintas") ||
+		!strings.Contains(leader[0].text, "ninguém livre") {
+		t.Fatalf("leader = %+v", leader)
+	}
+}

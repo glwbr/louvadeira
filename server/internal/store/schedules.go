@@ -120,7 +120,13 @@ func (s *Store) GenerateDraft(ctx context.Context, ministryID int64, month strin
 		return err
 	}
 	for _, u := range unavailable {
-		in.Unavailable = append(in.Unavailable, schedule.Unavailability{PersonID: u.PersonID, Start: u.StartDate, End: u.EndDate})
+		for _, group := range groups {
+			for _, o := range group.Occurrences {
+				if u.Covers(o.Date) {
+					in.Unavailable = append(in.Unavailable, schedule.Unavailability{PersonID: u.PersonID, Start: o.Date, End: o.Date})
+				}
+			}
+		}
 	}
 	if in.History, err = s.history(ctx, ministryID, first); err != nil {
 		return err
@@ -408,7 +414,7 @@ func markWarnings(sv *ScheduleService, fixed map[int64]map[int64]bool, unavailab
 
 func isUnavailable(person int64, date string, list []Unavailability) bool {
 	for _, u := range list {
-		if u.PersonID == person && u.StartDate <= date && date <= u.EndDate {
+		if u.PersonID == person && u.Covers(date) {
 			return true
 		}
 	}

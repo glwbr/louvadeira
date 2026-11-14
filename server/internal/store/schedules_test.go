@@ -275,3 +275,78 @@ func TestDiscardDraftOnlyForDrafts(t *testing.T) {
 		t.Fatalf("discard published: err = %v", err)
 	}
 }
+
+func TestRepeatingAbsences(t *testing.T) {
+	s, ctx := newStore(t), context.Background()
+	p, _ := s.CreatePerson(ctx, store.PersonInput{Name: "Gabi"})
+	thursday, firstWeek := 4, 1
+	if _, err := s.CreateUnavailability(ctx, store.UnavailabilityInput{PersonID: p.ID, StartDate: "2026-12-01", Repeat: store.RepeatWeekly, Reason: store.ReasonStudies}); !isValidation(err) {
+		t.Fatalf("weekly without a weekday: err = %v", err)
+	}
+	if _, err := s.CreateUnavailability(ctx, store.UnavailabilityInput{PersonID: p.ID, StartDate: "2026-12-01", Repeat: store.RepeatMonthly, Weekday: &thursday, Reason: store.ReasonStudies}); !isValidation(err) {
+		t.Fatalf("monthly without the week: err = %v", err)
+	}
+
+	weekly, err := s.CreateUnavailability(ctx, store.UnavailabilityInput{PersonID: p.ID, StartDate: "2026-12-01", Repeat: store.RepeatWeekly, Weekday: &thursday, Reason: store.ReasonStudies})
+	if err != nil || weekly.EndDate != "" || weekly.Weekday == nil || *weekly.Weekday != thursday {
+		t.Fatalf("weekly = %+v, err = %v", weekly, err)
+	}
+	for date, want := range map[string]bool{"2026-11-26": false, "2026-12-03": true, "2026-12-06": false, "2027-06-10": true} {
+		if weekly.Covers(date) != want {
+			t.Errorf("every Thursday covers %s = %v, want %v", date, !want, want)
+		}
+	}
+
+	monthly, err := s.CreateUnavailability(ctx, store.UnavailabilityInput{PersonID: p.ID, StartDate: "2026-12-01", EndDate: "2027-01-31",
+		Repeat: store.RepeatMonthly, Weekday: &thursday, WeekOfMonth: &firstWeek, Reason: store.ReasonWork})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for date, want := range map[string]bool{"2026-12-03": true, "2026-12-10": false, "2027-01-07": true, "2027-02-04": false} {
+		if monthly.Covers(date) != want {
+			t.Errorf("first Thursday until January covers %s = %v, want %v", date, !want, want)
+		}
+	}
+	if list, _ := s.ListUnavailabilities(ctx, "2028-01-01", "2028-01-31"); len(list) != 1 || list[0].ID != weekly.ID {
+		t.Fatalf("only the open-ended absence reaches 2028: %+v", list)
+	}
+}
+
+func TestGeneratorSkipsRepeatingAbsences(t *testing.T) {
+	s, ctx := newStore(t), context.Background()
+	w := setUpWorship(t, s)
+	thursday, sunday, firstWeek := 4, 0, 1
+	if _, err := s.CreateUnavailability(ctx, store.UnavailabilityInput{PersonID: w.people["Ana"].ID, StartDate: "2026-11-01",
+		Repeat: store.RepeatWeekly, Weekday: &thursday, Reason: store.ReasonStudies}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateUnavailability(ctx, store.UnavailabilityInput{PersonID: w.people["Bia"].ID, StartDate: "2026-11-01",
+		Repeat: store.RepeatMonthly, Weekday: &sunday, WeekOfMonth: &firstWeek, Reason: store.ReasonFamily}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.GenerateDraft(ctx, w.ministry.ID, "2026-12", generatedAt); err != nil {
+		t.Fatal(err)
+	}
+	view, err := s.ScheduleView(ctx, w.ministry.ID, "2026-12")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, week := range view.Weeks {
+		for _, sv := range week.Services {
+			for _, role := range sv.Roles {
+				for _, slot := range role.Slots {
+					day, _ := time.Parse("2006-01-02", sv.Date)
+					if slot.PersonID == w.people["Ana"].ID && day.Weekday() == time.Thursday {
+						t.Errorf("Ana is on Thursday %s", sv.Date)
+					}
+					if slot.PersonID == w.people["Bia"].ID && sv.Date == "2026-12-06" {
+						t.Errorf("Bia is on the first Sunday")
+					}
+					if slot.Warning == store.WarningUnavailable {
+						t.Errorf("%s on %s is flagged unavailable", slot.PersonName, sv.Date)
+					}
+				}
+			}
+		}
+	}
+}

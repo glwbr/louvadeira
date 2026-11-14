@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"time"
 )
 
@@ -24,20 +25,65 @@ func (r Reason) valid() bool {
 	return false
 }
 
+type Repeat string
+
+const (
+	RepeatNone    Repeat = "none"
+	RepeatWeekly  Repeat = "weekly"
+	RepeatMonthly Repeat = "monthly"
+)
+
+// NOTE: The end date stored for a repeating absence with no end; the API shows it as an empty endDate.
+const forever = "9999-12-31"
+
 type Unavailability struct {
-	ID         int64  `json:"id"`
-	PersonID   int64  `json:"personId"`
-	PersonName string `json:"personName"`
-	StartDate  string `json:"startDate"`
-	EndDate    string `json:"endDate"`
-	Reason     Reason `json:"reason"`
+	ID          int64  `json:"id"`
+	PersonID    int64  `json:"personId"`
+	PersonName  string `json:"personName"`
+	StartDate   string `json:"startDate"`
+	EndDate     string `json:"endDate"`
+	Reason      Reason `json:"reason"`
+	Repeat      Repeat `json:"repeat"`
+	Weekday     *int   `json:"weekday"`
+	WeekOfMonth *int   `json:"weekOfMonth"`
+}
+
+/**
+ * NOTE: Covers reports whether the absence includes a date: any day of its range, or only the matching weekday (and
+ * week of the month) when it repeats.
+ */
+func (u Unavailability) Covers(date string) bool {
+	if date < u.StartDate || date > u.Until() {
+		return false
+	}
+	if u.Repeat == RepeatNone || u.Repeat == "" {
+		return true
+	}
+	t, err := time.Parse("2006-01-02", date)
+	if err != nil || u.Weekday == nil || int(t.Weekday()) != *u.Weekday {
+		return false
+	}
+	return u.Repeat == RepeatWeekly || (u.WeekOfMonth != nil && nthWeekdayOfMonth(date) == *u.WeekOfMonth)
+}
+
+/**
+ * NOTE: Until is the last day the absence can cover, far in the future when it repeats with no end.
+ */
+func (u Unavailability) Until() string {
+	if u.EndDate == "" {
+		return forever
+	}
+	return u.EndDate
 }
 
 type UnavailabilityInput struct {
-	PersonID  int64  `json:"personId"`
-	StartDate string `json:"startDate"`
-	EndDate   string `json:"endDate"`
-	Reason    Reason `json:"reason"`
+	PersonID    int64  `json:"personId"`
+	StartDate   string `json:"startDate"`
+	EndDate     string `json:"endDate"`
+	Reason      Reason `json:"reason"`
+	Repeat      Repeat `json:"repeat"`
+	Weekday     *int   `json:"weekday"`
+	WeekOfMonth *int   `json:"weekOfMonth"`
 }
 
 func validDate(value, field string) (string, error) {
@@ -53,38 +99,73 @@ func (in UnavailabilityInput) clean() (UnavailabilityInput, error) {
 	if err != nil {
 		return in, err
 	}
-	end := start
+	out := UnavailabilityInput{PersonID: in.PersonID, StartDate: start, EndDate: start, Reason: in.Reason, Repeat: in.Repeat}
+	switch in.Repeat {
+	case "", RepeatNone:
+		out.Repeat = RepeatNone
+	case RepeatWeekly, RepeatMonthly:
+		if in.Weekday == nil || *in.Weekday < 0 || *in.Weekday > 6 {
+			return in, invalid("escolha o dia da semana")
+		}
+		out.Weekday = in.Weekday
+		if in.Repeat == RepeatMonthly {
+			if in.WeekOfMonth == nil || *in.WeekOfMonth < 1 || *in.WeekOfMonth > 4 {
+				return in, invalid("escolha a semana do mês")
+			}
+			out.WeekOfMonth = in.WeekOfMonth
+		}
+		out.EndDate = forever
+	default:
+		return in, invalid("repetição inválida")
+	}
 	if in.EndDate != "" {
-		if end, err = validDate(in.EndDate, "data final"); err != nil {
+		if out.EndDate, err = validDate(in.EndDate, "data final"); err != nil {
 			return in, err
 		}
 	}
-	if end < start {
+	if out.EndDate < start {
 		return in, invalid("a data final vem antes da inicial")
 	}
 	if !in.Reason.valid() {
 		return in, invalid("escolha o motivo")
 	}
-	return UnavailabilityInput{PersonID: in.PersonID, StartDate: start, EndDate: end, Reason: in.Reason}, nil
+	return out, nil
 }
 
-/**
- * NOTE: Returns every unavailability that overlaps [from, to], for people who are not archived.
- */
-func (s *Store) ListUnavailabilities(ctx context.Context, from, to string) ([]Unavailability, error) {
+const unavailabilityColumns = `u.id, u.person_id, p.name, u.start_date, u.end_date, u.reason, u.repeat, u.weekday, u.week_of_month`
+
+func scanUnavailability(row interface{ Scan(...any) error }) (Unavailability, error) {
+	var u Unavailability
+	var weekday, week sql.NullInt64
+	err := row.Scan(&u.ID, &u.PersonID, &u.PersonName, &u.StartDate, &u.EndDate, &u.Reason, &u.Repeat, &weekday, &week)
+	if u.EndDate == forever {
+		u.EndDate = ""
+	}
+	if weekday.Valid {
+		v := int(weekday.Int64)
+		u.Weekday = &v
+	}
+	if week.Valid {
+		v := int(week.Int64)
+		u.WeekOfMonth = &v
+	}
+	return u, err
+}
+
+func (s *Store) queryUnavailabilities(ctx context.Context, where string, args ...any) ([]Unavailability, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT u.id, u.person_id, p.name, u.start_date, u.end_date, u.reason
+		SELECT `+unavailabilityColumns+`
 		FROM unavailabilities u JOIN people p ON p.id = u.person_id
-		WHERE u.start_date <= ? AND u.end_date >= ? AND p.archived_at IS NULL
-		ORDER BY u.start_date, p.name COLLATE NOCASE`, to, from)
+		WHERE `+where+`
+		ORDER BY u.start_date, p.name COLLATE NOCASE`, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	list := []Unavailability{}
 	for rows.Next() {
-		var u Unavailability
-		if err := rows.Scan(&u.ID, &u.PersonID, &u.PersonName, &u.StartDate, &u.EndDate, &u.Reason); err != nil {
+		u, err := scanUnavailability(rows)
+		if err != nil {
 			return nil, err
 		}
 		list = append(list, u)
@@ -92,26 +173,42 @@ func (s *Store) ListUnavailabilities(ctx context.Context, from, to string) ([]Un
 	return list, rows.Err()
 }
 
+/**
+ * NOTE: Returns every unavailability whose range overlaps [from, to], for people who are not archived. A repeating
+ * one is listed even when none of its days fall in the range; Covers tells the days apart.
+ */
+func (s *Store) ListUnavailabilities(ctx context.Context, from, to string) ([]Unavailability, error) {
+	return s.queryUnavailabilities(ctx, "u.start_date <= ? AND u.end_date >= ? AND p.archived_at IS NULL", to, from)
+}
+
+/**
+ * NOTE: A person's absences that still matter: the ones not over before from.
+ */
+func (s *Store) PersonUnavailabilities(ctx context.Context, personID int64, from string) ([]Unavailability, error) {
+	return s.queryUnavailabilities(ctx, "u.person_id = ? AND u.end_date >= ?", personID, from)
+}
+
 func (s *Store) CreateUnavailability(ctx context.Context, in UnavailabilityInput) (Unavailability, error) {
 	in, err := in.clean()
 	if err != nil {
 		return Unavailability{}, err
 	}
-	u := Unavailability{PersonID: in.PersonID, StartDate: in.StartDate, EndDate: in.EndDate, Reason: in.Reason}
+	var id int64
 	err = s.db.QueryRowContext(ctx, `
-		INSERT INTO unavailabilities (person_id, start_date, end_date, reason)
-		SELECT id, ?, ?, ? FROM people WHERE id = ? AND archived_at IS NULL
-		RETURNING id, (SELECT name FROM people WHERE id = person_id)`,
-		in.StartDate, in.EndDate, in.Reason, in.PersonID).Scan(&u.ID, &u.PersonName)
-	return u, notFoundIfNoRows(err)
+		INSERT INTO unavailabilities (person_id, start_date, end_date, reason, repeat, weekday, week_of_month)
+		SELECT id, ?, ?, ?, ?, ?, ? FROM people WHERE id = ? AND archived_at IS NULL
+		RETURNING id`,
+		in.StartDate, in.EndDate, in.Reason, in.Repeat, in.Weekday, in.WeekOfMonth, in.PersonID).Scan(&id)
+	if err != nil {
+		return Unavailability{}, notFoundIfNoRows(err)
+	}
+	return s.Unavailability(ctx, id)
 }
 
 func (s *Store) Unavailability(ctx context.Context, id int64) (Unavailability, error) {
-	var u Unavailability
-	err := s.db.QueryRowContext(ctx, `
-		SELECT u.id, u.person_id, p.name, u.start_date, u.end_date, u.reason
-		FROM unavailabilities u JOIN people p ON p.id = u.person_id WHERE u.id = ?`, id).
-		Scan(&u.ID, &u.PersonID, &u.PersonName, &u.StartDate, &u.EndDate, &u.Reason)
+	u, err := scanUnavailability(s.db.QueryRowContext(ctx, `
+		SELECT `+unavailabilityColumns+`
+		FROM unavailabilities u JOIN people p ON p.id = u.person_id WHERE u.id = ?`, id))
 	return u, notFoundIfNoRows(err)
 }
 
