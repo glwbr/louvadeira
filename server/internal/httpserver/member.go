@@ -246,3 +246,33 @@ func (d Deps) openMyCovers(w http.ResponseWriter, r *http.Request) {
 		d.respond(w, http.StatusOK, requests, err)
 	}
 }
+
+/**
+ * NOTE: Gives someone back the services they said they could not serve while nobody has taken them yet, as if they
+ * had answered on WhatsApp: whoever was invited is released and the leaders hear about it.
+ */
+func (d Deps) comeback(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	if d.Bot == nil {
+		writeError(w, http.StatusServiceUnavailable, "escalas indisponíveis")
+		return
+	}
+	person, err := d.Store.Person(r.Context(), id)
+	if err != nil {
+		d.fail(w, err)
+		return
+	}
+	slots, ok := d.ownSlots(w, r, person)
+	if !ok {
+		return
+	}
+	ids := make([]int64, len(slots))
+	for i, slot := range slots {
+		ids[i] = slot.AssignmentID
+	}
+	d.Bot.ConfirmFromApp(r.Context(), person, ids)
+	w.WriteHeader(http.StatusNoContent)
+}

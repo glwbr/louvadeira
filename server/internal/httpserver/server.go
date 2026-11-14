@@ -83,6 +83,7 @@ func New(d Deps) http.Handler {
 	admin("PUT /api/people/{id}", d.updatePerson)
 	admin("DELETE /api/people/{id}", d.archivePerson)
 	admin("POST /api/people/{id}/link", d.sendPersonLink)
+	admin("POST /api/people/{id}/comeback", d.comeback)
 
 	admin("GET /api/services", d.listServices)
 	admin("POST /api/services", d.createService)
