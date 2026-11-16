@@ -23,12 +23,15 @@ depends = ["web:build"]
 dir = "server"
 run = "go build -o ../bin/louvadeira ./cmd/louvadeira"
 
-[tasks."build:arm64"]
-description = "Gera bin/louvadeira-linux-arm64 para o servidor"
+[tasks."build:linux"]
+description = "Gera bin/louvadeira-linux-amd64 e bin/louvadeira-linux-arm64 para servidores"
 depends = ["web:build"]
 dir = "server"
-env = { CGO_ENABLED = "0", GOOS = "linux", GOARCH = "arm64" }
-run = "go build -trimpath -ldflags='-s -w' -o ../bin/louvadeira-linux-arm64 ./cmd/louvadeira"
+env = { CGO_ENABLED = "0", GOOS = "linux" }
+run = [
+  "GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o ../bin/louvadeira-linux-amd64 ./cmd/louvadeira",
+  "GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o ../bin/louvadeira-linux-arm64 ./cmd/louvadeira",
+]
 
 [tasks.test]
 description = "Testes e verificações do servidor e do front"
@@ -52,6 +55,6 @@ dir = "web"
 run = "pnpm dev"
 
 [tasks.deploy]
-description = "Compila para ARM64 e publica no servidor (LOUVADEIRA_HOST)"
-depends = ["build:arm64"]
+description = "Compila para Linux e publica no servidor (LOUVADEIRA_HOST)"
+depends = ["build:linux"]
 run = "deploy/deploy.sh"

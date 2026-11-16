@@ -1,11 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${LOUVADEIRA_HOST:?defina LOUVADEIRA_HOST (usuario@ip) no mise.local.toml}"
+: "${LOUVADEIRA_HOST:?defina LOUVADEIRA_HOST (usuario@servidor) no mise.local.toml}"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 
+platform="$(ssh "$LOUVADEIRA_HOST" 'uname -sm')"
+case "$platform" in
+  "Linux x86_64") arch=amd64 ;;
+  "Linux aarch64" | "Linux arm64") arch=arm64 ;;
+  *)
+    echo "servidor não suportado: $platform (precisa ser Linux em x86_64 ou arm64)" >&2
+    exit 1
+    ;;
+esac
+binary="$root/bin/louvadeira-linux-$arch"
+if [ ! -f "$binary" ]; then
+  echo "falta $binary; rode 'mise run build:linux'" >&2
+  exit 1
+fi
+
 ssh "$LOUVADEIRA_HOST" 'mkdir -p ~/louvadeira/bin ~/louvadeira/data ~/.config/systemd/user'
-scp -q "$root/bin/louvadeira-linux-arm64" "$LOUVADEIRA_HOST:louvadeira/bin/louvadeira.new"
+scp -q "$binary" "$LOUVADEIRA_HOST:louvadeira/bin/louvadeira.new"
 scp -q "$root/deploy/louvadeira.service" "$LOUVADEIRA_HOST:.config/systemd/user/louvadeira.service"
 scp -q "$root/deploy/lv" "$LOUVADEIRA_HOST:louvadeira/lv"
 
@@ -17,16 +32,14 @@ mv bin/louvadeira.new bin/louvadeira
 if [ ! -f louvadeira.env ]; then
   umask 077
   cat > louvadeira.env <<ENV
-LOUVADEIRA_ADDR=:8090
+LOUVADEIRA_ADDR=127.0.0.1:8090
 LOUVADEIRA_DATA_DIR=data
+LOUVADEIRA_PUBLIC_URL=
 LOUVADEIRA_WHATSAPP_MODE=test
 LOUVADEIRA_WHATSAPP_ALLOWLIST=
 LOUVADEIRA_ADMIN_TOKEN=$(head -c 24 /dev/urandom | base64 | tr -d '/+=')
 ENV
-  echo "criado ~/louvadeira/louvadeira.env"
-fi
-if ! grep -q '^LOUVADEIRA_PUBLIC_URL=' louvadeira.env; then
-  echo "LOUVADEIRA_PUBLIC_URL=http://$(hostname -I | awk '{print $1}'):8090" >> louvadeira.env
+  echo "criado ~/louvadeira/louvadeira.env; defina nele LOUVADEIRA_PUBLIC_URL com o endereço público do app"
 fi
 
 systemctl --user daemon-reload
