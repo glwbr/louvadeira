@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 660" width="940" height="660" role="img" aria-labelledby="title desc">
+  <title id="title">O ciclo do mês</title>
+  <desc id="desc">A partir do dia 20, a louvadeira pergunta a cada integrante em quais cultos do mês seguinte ele não pode, e o integrante marca os dias. Dois dias depois a louvadeira lembra quem não respondeu. Três dias depois manda o rascunho ao líder, que aprova, e a escala do mês é publicada no grupo do ministério. Em cada semana da escala, a louvadeira pede confirmação ao integrante sete dias antes, recebe a resposta, manda um lembrete na véspera do culto e avisa o líder, três dias antes, sobre quem falta responder.</desc>
+  <style>
+    svg {
+      --bg: #ffffff;
+      --person: #08427b;
+      --container: #1168bd;
+      --component: #85bbf0;
+      --external: #6b7280;
+      --line: #4b5563;
+      --label: #374151;
+      --boundary: #6b7280;
+      --group: #d1d5db;
+      --group-label: #6b7280;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      svg {
+        --bg: #0d1117;
+        --external: #57606a;
+        --line: #9ca3af;
+        --label: #d1d5db;
+        --boundary: #8b949e;
+        --group: #30363d;
+        --group-label: #8b949e;
+      }
+    }
+    .canvas { fill: var(--bg); }
+    .person { fill: var(--person); }
+    .container { fill: var(--container); }
+    .component { fill: var(--component); }
+    .external { fill: var(--external); }
+    .planned { fill: none; stroke: var(--container); stroke-width: 1.5; stroke-dasharray: 6 4; }
+    .rim { fill: none; stroke: #ffffff; stroke-opacity: 0.55; stroke-width: 1.5; }
+    .name { fill: #ffffff; font-size: 16px; font-weight: 700; text-anchor: middle; }
+    .name.small { font-size: 14px; }
+    .type { fill: #ffffff; fill-opacity: 0.85; font-size: 11px; text-anchor: middle; }
+    .text { fill: #ffffff; font-size: 12.5px; text-anchor: middle; }
+    .on-light { fill: #000000; fill-opacity: 1; }
+    .on-canvas { fill: var(--label); fill-opacity: 1; }
+    .boundary { fill: none; stroke: var(--boundary); stroke-width: 1.5; stroke-dasharray: 8 5; }
+    .boundary-name { fill: var(--label); font-size: 14px; font-weight: 700; }
+    .boundary-type { fill: var(--group-label); font-size: 11px; }
+    .group { fill: none; stroke: var(--group); stroke-width: 1.25; }
+    .group-label { fill: var(--group-label); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; }
+    .line { fill: none; stroke: var(--line); stroke-width: 1.5; }
+    .line.dashed { stroke-dasharray: 6 4; }
+    .arrowhead { fill: var(--line); }
+    .label { fill: var(--label); font-size: 12px; paint-order: stroke; stroke: var(--bg); stroke-width: 5px; stroke-linejoin: round; }
+    .label.tech { font-size: 11px; fill-opacity: 0.8; }
+    .decision { fill: var(--bg); stroke: var(--line); stroke-width: 1.5; }
+    .decision-text { fill: var(--label); font-size: 12.5px; text-anchor: middle; }
+    .lifeline { fill: none; stroke: var(--group-label); stroke-width: 1.25; stroke-dasharray: 3 5; }
+    .note { fill: var(--bg); stroke: var(--group-label); stroke-width: 1.25; }
+    .note-text { fill: var(--label); font-size: 12px; text-anchor: middle; }
+    .frame { fill: none; stroke: var(--boundary); stroke-width: 1.25; }
+    .frame-title { fill: var(--label); font-size: 12px; font-weight: 700; }
+    .dot { fill: var(--line); }
+    .ring { fill: none; stroke: var(--line); stroke-width: 1.5; }
+    .entity { fill: var(--bg); stroke: var(--container); stroke-width: 1.5; }
+    .field { fill: var(--label); font-size: 12px; }
+    .field.key { font-weight: 700; }
+    .legend { fill: var(--label); font-size: 12px; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path class="arrowhead" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="canvas" width="940" height="660"/>
+<path class="lifeline" d="M110,74 V640"/>
+<rect class="container" x="20" y="20" width="180" height="54" rx="10"/>
+<text class="name small" x="110" y="43">louvadeira</text>
+<text class="type" x="110" y="60">[Servidor]</text>
+<path class="lifeline" d="M350,74 V640"/>
+<rect class="person" x="260" y="20" width="180" height="54" rx="10"/>
+<text class="name small" x="350" y="43">Integrante</text>
+<text class="type" x="350" y="60">[Pessoa]</text>
+<path class="lifeline" d="M590,74 V640"/>
+<rect class="person" x="500" y="20" width="180" height="54" rx="10"/>
+<text class="name small" x="590" y="43">Líder</text>
+<text class="type" x="590" y="60">[Pessoa]</text>
+<path class="lifeline" d="M830,74 V640"/>
+<rect class="external" x="740" y="20" width="180" height="54" rx="10"/>
+<text class="name small" x="830" y="43">Grupo do ministério</text>
+<text class="type" x="830" y="60">[WhatsApp]</text>
+<rect class="frame" x="130" y="96" width="790" height="304"/>
+<path class="frame" d="M130,118 H250.194 l8,-8 V96"/>
+<text class="frame-title" x="138" y="111">A partir do dia 20</text>
+<path class="line" d="M110,152 H348" marker-end="url(#arrow)"/>
+<text class="label" x="230" y="144" text-anchor="middle">Em quais cultos você não pode?</text>
+<path class="line dashed" d="M350,196 H112" marker-end="url(#arrow)"/>
+<text class="label" x="230" y="188" text-anchor="middle">Marca os dias</text>
+<path class="line" d="M110,240 H348" marker-end="url(#arrow)"/>
+<text class="label" x="230" y="232" text-anchor="middle">2 dias depois: lembrete</text>
+<path class="line" d="M110,284 H588" marker-end="url(#arrow)"/>
+<text class="label" x="470" y="276" text-anchor="middle">3 dias depois: rascunho</text>
+<path class="line dashed" d="M590,328 H112" marker-end="url(#arrow)"/>
+<text class="label" x="470" y="320" text-anchor="middle">Pode publicar</text>
+<path class="line" d="M110,372 H828" marker-end="url(#arrow)"/>
+<text class="label" x="710" y="364" text-anchor="middle">Escala do mês publicada</text>
+<rect class="frame" x="130" y="420" width="790" height="204"/>
+<path class="frame" d="M130,442 H317.313 l8,-8 V420"/>
+<text class="frame-title" x="138" y="435">Em cada semana da escala</text>
+<path class="line" d="M110,476 H348" marker-end="url(#arrow)"/>
+<text class="label" x="230" y="468" text-anchor="middle">7 dias antes: consegue ir?</text>
+<path class="line dashed" d="M350,520 H112" marker-end="url(#arrow)"/>
+<text class="label" x="230" y="512" text-anchor="middle">Confirma, ou avisa que não vai</text>
+<path class="line" d="M110,564 H348" marker-end="url(#arrow)"/>
+<text class="label" x="230" y="556" text-anchor="middle">Véspera: lembrete do culto</text>
+<path class="line" d="M110,608 H588" marker-end="url(#arrow)"/>
+<text class="label" x="470" y="600" text-anchor="middle">3 dias antes: falta responder</text>
+</svg>

@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 780" width="900" height="780" role="img" aria-labelledby="title desc">
+  <title id="title">Os contêineres da louvadeira</title>
+  <desc id="desc">A liderança monta e publica as escalas no app web, e o integrante vê as suas escalas nele. O app web chama a API do servidor louvadeira por HTTPS, através de um proxy ou túnel. O servidor lê e grava o banco app.db, guarda a sessão do WhatsApp no banco whatsapp.db e envia mensagens e recebe votos pelo WhatsApp, como aparelho vinculado. O integrante responde no WhatsApp.</desc>
+  <style>
+    svg {
+      --bg: #ffffff;
+      --person: #08427b;
+      --container: #1168bd;
+      --component: #85bbf0;
+      --external: #6b7280;
+      --line: #4b5563;
+      --label: #374151;
+      --boundary: #6b7280;
+      --group: #d1d5db;
+      --group-label: #6b7280;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      svg {
+        --bg: #0d1117;
+        --external: #57606a;
+        --line: #9ca3af;
+        --label: #d1d5db;
+        --boundary: #8b949e;
+        --group: #30363d;
+        --group-label: #8b949e;
+      }
+    }
+    .canvas { fill: var(--bg); }
+    .person { fill: var(--person); }
+    .container { fill: var(--container); }
+    .component { fill: var(--component); }
+    .external { fill: var(--external); }
+    .planned { fill: none; stroke: var(--container); stroke-width: 1.5; stroke-dasharray: 6 4; }
+    .rim { fill: none; stroke: #ffffff; stroke-opacity: 0.55; stroke-width: 1.5; }
+    .name { fill: #ffffff; font-size: 16px; font-weight: 700; text-anchor: middle; }
+    .name.small { font-size: 14px; }
+    .type { fill: #ffffff; fill-opacity: 0.85; font-size: 11px; text-anchor: middle; }
+    .text { fill: #ffffff; font-size: 12.5px; text-anchor: middle; }
+    .on-light { fill: #000000; fill-opacity: 1; }
+    .on-canvas { fill: var(--label); fill-opacity: 1; }
+    .boundary { fill: none; stroke: var(--boundary); stroke-width: 1.5; stroke-dasharray: 8 5; }
+    .boundary-name { fill: var(--label); font-size: 14px; font-weight: 700; }
+    .boundary-type { fill: var(--group-label); font-size: 11px; }
+    .group { fill: none; stroke: var(--group); stroke-width: 1.25; }
+    .group-label { fill: var(--group-label); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; }
+    .line { fill: none; stroke: var(--line); stroke-width: 1.5; }
+    .line.dashed { stroke-dasharray: 6 4; }
+    .arrowhead { fill: var(--line); }
+    .label { fill: var(--label); font-size: 12px; paint-order: stroke; stroke: var(--bg); stroke-width: 5px; stroke-linejoin: round; }
+    .label.tech { font-size: 11px; fill-opacity: 0.8; }
+    .decision { fill: var(--bg); stroke: var(--line); stroke-width: 1.5; }
+    .decision-text { fill: var(--label); font-size: 12.5px; text-anchor: middle; }
+    .lifeline { fill: none; stroke: var(--group-label); stroke-width: 1.25; stroke-dasharray: 3 5; }
+    .note { fill: var(--bg); stroke: var(--group-label); stroke-width: 1.25; }
+    .note-text { fill: var(--label); font-size: 12px; text-anchor: middle; }
+    .frame { fill: none; stroke: var(--boundary); stroke-width: 1.25; }
+    .frame-title { fill: var(--label); font-size: 12px; font-weight: 700; }
+    .dot { fill: var(--line); }
+    .ring { fill: none; stroke: var(--line); stroke-width: 1.5; }
+    .entity { fill: var(--bg); stroke: var(--container); stroke-width: 1.5; }
+    .field { fill: var(--label); font-size: 12px; }
+    .field.key { font-weight: 700; }
+    .legend { fill: var(--label); font-size: 12px; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path class="arrowhead" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="canvas" width="900" height="780"/>
+<circle class="person" cx="200" cy="28" r="22"/>
+<rect class="person" x="105" y="48" width="190" height="96" rx="20"/>
+<text class="name" x="200" y="83.76">Liderança</text>
+<text class="type" x="200" y="101.76">[Pessoa]</text>
+<text class="text" x="200" y="123.76">Monta e publica as escalas</text>
+<circle class="person" cx="470" cy="28" r="22"/>
+<rect class="person" x="375" y="48" width="190" height="96" rx="20"/>
+<text class="name" x="470" y="83.76">Integrante</text>
+<text class="type" x="470" y="101.76">[Pessoa]</text>
+<text class="text" x="470" y="123.76">Serve nos cultos</text>
+<rect class="boundary" x="12" y="200" width="580" height="564" rx="12"/>
+<text class="boundary-name" x="28" y="734">louvadeira</text>
+<text class="boundary-type" x="28" y="751">[Sistema de software]</text>
+<rect class="container" x="105" y="230" width="190" height="100" rx="10"/>
+<text class="name" x="200" y="255.26">App web</text>
+<text class="type" x="200" y="273.26">[Contêiner: React, PWA]</text>
+<text class="text" x="200" y="295.26">Painel da liderança</text>
+<text class="text" x="200" y="312.26">e página do integrante</text>
+<rect class="group" x="28" y="410" width="548" height="296" rx="8"/>
+<text class="group-label" x="42" y="430">Servidor Linux</text>
+<rect class="container" x="85" y="440" width="230" height="110" rx="10"/>
+<text class="name" x="200" y="470.26">Servidor louvadeira</text>
+<text class="type" x="200" y="488.26">[Contêiner: Go]</text>
+<text class="text" x="200" y="510.26">API, bot e agendador,</text>
+<text class="text" x="200" y="527.26">com o app web embutido</text>
+<path class="container" d="M60,612 a85,12 0 0 1 170,0 v72 a85,12 0 0 1 -170,0 z"/>
+<path class="rim" d="M60,612 a85,12 0 0 0 170,0"/>
+<text class="name" x="145" y="640.76">app.db</text>
+<text class="type" x="145" y="658.76">[Contêiner: SQLite]</text>
+<text class="text" x="145" y="680.76">Cadastros e escalas</text>
+<path class="container" d="M330,612 a95,12 0 0 1 190,0 v72 a95,12 0 0 1 -190,0 z"/>
+<path class="rim" d="M330,612 a95,12 0 0 0 190,0"/>
+<text class="name" x="425" y="640.76">whatsapp.db</text>
+<text class="type" x="425" y="658.76">[Contêiner: SQLite]</text>
+<text class="text" x="425" y="680.76">Sessão do WhatsApp</text>
+<rect class="external" x="660" y="440" width="190" height="110" rx="10"/>
+<text class="name" x="755" y="470.26">WhatsApp</text>
+<text class="type" x="755" y="488.26">[Sistema externo]</text>
+<text class="text" x="755" y="510.26">Entrega mensagens</text>
+<text class="text" x="755" y="527.26">e enquetes</text>
+<path class="line" d="M200,144 V228" marker-end="url(#arrow)"/>
+<text class="label" x="212" y="168">Usa o painel</text>
+<text class="label tech" x="212" y="183">[HTTPS]</text>
+<path class="line" d="M440,144 V280 H297" marker-end="url(#arrow)"/>
+<text class="label" x="452" y="236">Vê suas escalas</text>
+<text class="label tech" x="452" y="251">[HTTPS]</text>
+<path class="line" d="M500,144 V165 H755 V438" marker-end="url(#arrow)"/>
+<text class="label" x="767" y="300">Responde enquetes</text>
+<path class="line" d="M200,330 V438" marker-end="url(#arrow)"/>
+<text class="label" x="212" y="372">Chama a API</text>
+<text class="label tech" x="212" y="387">[HTTPS, por proxy ou túnel]</text>
+<path class="line" d="M315,495 H658" marker-end="url(#arrow)"/>
+<text class="label" x="327" y="485">Envia mensagens e recebe votos</text>
+<text class="label tech" x="327" y="510">[Aparelho vinculado]</text>
+<path class="line" d="M150,550 V598" marker-end="url(#arrow)"/>
+<text class="label" x="138" y="572" text-anchor="end">Lê e grava</text>
+<text class="label tech" x="138" y="587" text-anchor="end">[SQL]</text>
+<path class="line" d="M290,550 V574 H425 V598" marker-end="url(#arrow)"/>
+<text class="label" x="360" y="566" text-anchor="middle">Guarda a sessão</text>
+<text class="label tech" x="360" y="590" text-anchor="middle">[SQL]</text>
+</svg>
