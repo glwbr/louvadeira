@@ -8,6 +8,25 @@ Cada igreja roda a sua própria cópia, em um servidor seu. Os textos do app e d
 Brasil, os telefones seguem o formato brasileiro e o vocabulário é o de uma igreja evangélica: culto, ministério,
 Santa Ceia.
 
+## Como fica
+
+No app, os administradores acompanham os próximos cultos e a escala, e cada integrante tem a própria página.
+
+<p>
+  <img src="docs/assets/telas/app-inicio.png" width="250" align="top" alt="Tela Início do painel: os próximos cultos, com quem já confirmou em cada função.">
+  <img src="docs/assets/telas/app-escala.png" width="250" align="top" alt="Tela Escalas: a semana de 16 a 22 de novembro, com as funções de cada culto e a confirmação de cada pessoa.">
+  <img src="docs/assets/telas/app-minha-escala.png" width="250" align="top" alt="Página do integrante: as próximas escalas confirmadas e uma ausência por viagem.">
+</p>
+
+No WhatsApp, a equipe responde enquetes. As conversas abaixo são ilustrações: os textos e as opções são os que o
+bot envia, com pessoas fictícias. No celular, elas aparecem com a aparência do WhatsApp.
+
+<p>
+  <img src="docs/assets/telas/whatsapp-enquete-do-mes.png" width="250" align="top" alt="Enquete do mês: o bot pergunta em quais cultos de dezembro a pessoa não pode, ela marca quatro dias e recebe a confirmação.">
+  <img src="docs/assets/telas/whatsapp-confirmacao.png" width="250" align="top" alt="Confirmação da semana: a pessoa responde que vai nos dois cultos, recebe o confirmado e, na véspera, o lembrete.">
+  <img src="docs/assets/telas/whatsapp-substituicao.png" width="250" align="top" alt="Convite para substituir: a pessoa aceita ficar no lugar de quem não pode e recebe o combinado.">
+</p>
+
 ## O que tem no repositório
 
 | Pasta | O que tem |

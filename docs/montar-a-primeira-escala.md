@@ -43,6 +43,12 @@ Um integrante sem WhatsApp entra na escala e não recebe mensagens.
    avisos e aprova a escala.
 5. Na aba **Cultos**, marque os cultos em que o ministério tem escala.
 
+A aba **Equipe** de um ministério pronto, com o líder e os fixos marcados:
+
+<p>
+  <img src="assets/telas/app-equipe.png" width="300" align="top" alt="Aba Equipe do ministério Louvor: cada integrante com as suas funções, a líder marcada e o alfinete nas funções fixas.">
+</p>
+
 ## Gerar e publicar
 
 1. Em **Escalas**, escolha o ministério e o mês.
@@ -53,6 +59,13 @@ Um integrante sem WhatsApp entra na escala e não recebe mensagens.
 
 A escala fica marcada como **Publicada** e sai no grupo do ministério, mencionando os escalados do rodízio. A tela
 **Início** passa a mostrar os próximos cultos e quantos já confirmaram.
+
+O rascunho antes de publicar, e a tela **Início** depois:
+
+<p>
+  <img src="assets/telas/app-rascunho.png" width="300" align="top" alt="Tela Escalas com o rascunho de dezembro: a primeira semana preenchida e a barra com o botão Publicar.">
+  <img src="assets/telas/app-inicio.png" width="300" align="top" alt="Tela Início do painel: os próximos cultos, com quem já confirmou em cada função.">
+</p>
 
 Enquanto a escala é um rascunho, **Gerar de novo** refaz tudo e descarta os ajustes feitos à mão. Depois de
 publicada, as mudanças são substituições ou trocas feitas na própria escala.

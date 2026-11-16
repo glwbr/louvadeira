@@ -54,12 +54,27 @@ aprovar. Se um administrador já tiver começado um rascunho no app, esse rascun
 enquete ou publicada pelo app, a escala sai no grupo do ministério. A mensagem menciona os escalados do rodízio, e
 os fixos ficam subentendidos.
 
+Na ordem: a enquete que cada integrante recebe, o que chega para o líder e a escala publicada no grupo.
+
+<p>
+  <img src="assets/telas/whatsapp-enquete-do-mes.png" width="250" align="top" alt="Enquete do mês: o bot pergunta em quais cultos de dezembro a pessoa não pode, ela marca quatro dias e recebe a confirmação.">
+  <img src="assets/telas/whatsapp-lider.png" width="250" align="top" alt="Conversa do líder: o aviso de uma ausência, o rascunho da escala de dezembro, a enquete de aprovação respondida e a confirmação da publicação.">
+  <img src="assets/telas/whatsapp-grupo.png" width="250" align="top" alt="Grupo do ministério: o aviso de uma substituição e a escala de dezembro, com os escalados mencionados.">
+</p>
+
+As conversas são ilustrações: os textos e as opções são os que o bot envia, com pessoas fictícias. No celular,
+elas aparecem com a aparência do WhatsApp.
+
 Uma escala publicada não é gerada de novo. A partir da publicação, toda mudança é uma substituição ou um ajuste
 feito à mão no app.
 
 Em cada semana da escala, a louvadeira pede confirmação sete dias antes do primeiro culto e manda um lembrete na
 véspera de cada culto. No rodízio por semana, uma única enquete cobre todos os cultos da semana.
 [Mensagens e prazos](mensagens.md) traz a lista completa, com horários e destinatários.
+
+<p>
+  <img src="assets/telas/whatsapp-confirmacao.png" width="300" align="top" alt="Confirmação da semana: a pessoa responde que vai nos dois cultos, recebe o confirmado e, na véspera, o lembrete.">
+</p>
 
 ## Como a escala é montada
 
@@ -104,6 +119,13 @@ função na equipe e tem WhatsApp, não está naquele culto e não avisou ausên
 fica com o lugar, já confirmado. Quem avisou continua na escala até alguém aceitar. Assim nenhuma vaga fica aberta
 sem que alguém esteja resolvendo.
 
+O convite que o substituto recebe, e a substituição em andamento vista no painel:
+
+<p>
+  <img src="assets/telas/whatsapp-substituicao.png" width="300" align="top" alt="Convite para substituir: a pessoa aceita ficar no lugar de quem não pode e recebe o combinado.">
+  <img src="assets/telas/app-substituicoes.png" width="300" align="top" alt="Tela Escalas: a seção Substituições mostra que o app procura substituto para o baixo de domingo e espera uma resposta.">
+</p>
+
 A liderança é avisada sempre. Quando faltam menos de 72 horas para o culto, o aviso diz isso, e o painel marca a
 substituição como "Em cima da hora". Quando alguém aceita, a mudança é anunciada no grupo do ministério. Se ninguém
 da equipe está livre, ou se todos recusam, a liderança recebe o pedido de ajuda, e um administrador ajusta a escala
@@ -127,6 +149,11 @@ escala.
 O app não tem senha. O integrante digita o seu WhatsApp na tela de entrada e recebe pelo WhatsApp um link de acesso.
 O link funciona uma vez e deixa o celular conectado. Administradores caem no painel, com escalas e cadastros. Os
 outros integrantes veem a própria página, com as suas escalas e os dias em que não podem.
+
+<p>
+  <img src="assets/telas/app-entrar.png" width="300" align="top" alt="Tela de entrada: um campo para o WhatsApp com DDD e o botão Receber link.">
+  <img src="assets/telas/app-minha-escala.png" width="300" align="top" alt="Página do integrante: as próximas escalas confirmadas e uma ausência por viagem.">
+</p>
 
 ## Para saber mais
 

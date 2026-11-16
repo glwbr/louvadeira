@@ -81,6 +81,13 @@ maiúsculas não fazem diferença. Uma data sem ano, ou um dia sem mês, signifi
 
 Uma mensagem que chega mais de 2 horas depois de enviada, porque o servidor estava fora do ar, fica sem resposta.
 
+Uma conversa com dois comandos. A imagem é uma ilustração: os textos e as opções são os que o bot envia, com pessoas fictícias. No celular,
+a conversa aparece com a aparência do WhatsApp.
+
+<p>
+  <img src="assets/telas/whatsapp-comandos.png" width="300" align="top" alt="Conversa com o bot: a pessoa manda escala e recebe os próximos cultos, depois manda não posso dia 26, confirma na enquete e o bot avisa que chamou substitutos.">
+</p>
+
 ## Acesso ao app
 
 | Mensagem | Quando | Validade |
