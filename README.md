@@ -82,3 +82,7 @@ Para consultar ou mexer no código:
 
 Rode `mise run test` antes de enviar uma mudança. As mensagens de commit seguem o padrão
 `<tipo>(<escopo>): <assunto>`, como `fix(notify): ...`.
+
+## Licença
+
+O código é distribuído sob a [licença MIT](LICENSE).
