@@ -109,7 +109,7 @@ func (d Deps) admin(next http.Handler) http.Handler {
 	})
 }
 
-// NOTE: Behind Caddy the TLS ends at the proxy, so the forwarded scheme decides whether cookies are Secure.
+// NOTE: Behind a reverse proxy or a tunnel the TLS ends there, so the forwarded scheme decides whether cookies are Secure.
 func isHTTPS(r *http.Request) bool {
 	return r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 }

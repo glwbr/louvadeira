@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -56,18 +57,25 @@ func (l *limiter) recent(client string, now time.Time) []time.Time {
 }
 
 /**
- * CONSTRAINT: Through the Cloudflare tunnel every request comes from cloudflared on this machine, so the client is the
- * address Cloudflare reports. That header is only trusted on loopback, where nobody else can set it.
+ * CONSTRAINT: Behind a tunnel or a reverse proxy every request comes from that program on this machine, so the client
+ * is the address it reports. The last entry of X-Forwarded-For is the one the proxy or Cloudflare wrote; earlier
+ * entries, and a CF-Connecting-IP that arrives through another proxy, come from the visitor, so Cloudflare's header
+ * only counts when there is no X-Forwarded-For. Both are only trusted on loopback, where nobody else can set them.
  */
 func clientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
 	}
-	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
-		if forwarded := r.Header.Get("CF-Connecting-IP"); forwarded != "" {
-			return forwarded
-		}
+	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
+		return host
+	}
+	chain := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
+	if last := strings.TrimSpace(chain[len(chain)-1]); last != "" {
+		return last
+	}
+	if forwarded := r.Header.Get("CF-Connecting-IP"); forwarded != "" {
+		return forwarded
 	}
 	return host
 }

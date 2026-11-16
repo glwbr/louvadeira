@@ -189,3 +189,34 @@ func TestTheSignInFormSlowsDownOneClient(t *testing.T) {
 		t.Fatalf("still blocked after the window: %d", rec.Code)
 	}
 }
+
+func TestTheSignInFormTellsVisitorsApartBehindAReverseProxy(t *testing.T) {
+	h := newHarness(t)
+	send := func(forwardedFor, cloudflare string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/link", strings.NewReader(`{"phone":"(11) 93333-3333"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = "127.0.0.1:5000"
+		req.Header.Set("X-Forwarded-For", forwardedFor)
+		if cloudflare != "" {
+			req.Header.Set("CF-Connecting-IP", cloudflare)
+		}
+		rec := httptest.NewRecorder()
+		h.handler.ServeHTTP(rec, req)
+		return rec
+	}
+
+	for i := range 10 {
+		if rec := send(fmt.Sprintf("198.51.100.%d, 203.0.113.7", i), ""); rec.Code != http.StatusAccepted {
+			t.Fatalf("within the limit: %d", rec.Code)
+		}
+	}
+	if rec := send("198.51.100.99, 203.0.113.7", ""); rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("an address the visitor wrote chose the client: %d", rec.Code)
+	}
+	if rec := send("203.0.113.7", "198.51.100.99"); rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("a Cloudflare header the visitor wrote chose the client: %d", rec.Code)
+	}
+	if rec := send("203.0.113.8", ""); rec.Code != http.StatusAccepted {
+		t.Fatalf("another visitor through the proxy was blocked: %d", rec.Code)
+	}
+}
