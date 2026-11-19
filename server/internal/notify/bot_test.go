@@ -265,6 +265,19 @@ func TestTickAsksEachPersonOncePerWeekWithTheWholeWeek(t *testing.T) {
 	}
 }
 
+func TestTheConfirmationAsksPeopleToConfirmTheirPresence(t *testing.T) {
+	w := newWorld(t)
+	w.bot.Tick(context.Background())
+	single := w.fake.sentPollFor(t, w.phone(w.slotOf("2026-11-15", "Baixo").PersonName), "15/11")
+	if !strings.HasSuffix(single.text, "\nOi, "+w.slotOf("2026-11-15", "Baixo").PersonName+"! Você está na escala. Confirme sua presença:") {
+		t.Fatalf("one service:\n%s", single.text)
+	}
+	multi := w.fake.sentPollFor(t, w.phone(w.slotOf("2026-11-19", "Baixo").PersonName), "19/11")
+	if !strings.HasSuffix(multi.text, "• Domingo, 22/11, às 19h · Baixo\nConfirme sua presença:") {
+		t.Fatalf("whole week:\n%s", multi.text)
+	}
+}
+
 func TestQuietHoursSendNothing(t *testing.T) {
 	w := newWorld(t)
 	w.clock = time.Date(2026, 11, 13, 22, 0, 0, 0, saoPaulo)

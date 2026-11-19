@@ -36,7 +36,7 @@ def ciclo_do_mes():
             message(328, lider, servidor, "Pode publicar", dashed=True, at=entre_integrante_e_lider),
             message(372, servidor, grupo, "Escala do mês publicada", at=entre_lider_e_grupo),
             frame(130, 420, 790, 204, "Em cada semana da escala"),
-            message(476, servidor, integrante, "7 dias antes: consegue ir?"),
+            message(476, servidor, integrante, "7 dias antes: confirme presença"),
             message(520, integrante, servidor, "Confirma, ou avisa que não vai", dashed=True),
             message(564, servidor, integrante, "Véspera: lembrete do culto"),
             message(608, servidor, lider, "3 dias antes: falta responder", at=entre_integrante_e_lider),

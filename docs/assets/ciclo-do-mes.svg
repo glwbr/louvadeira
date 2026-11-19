@@ -104,7 +104,7 @@
 <path class="frame" d="M130,442 H317.313 l8,-8 V420"/>
 <text class="frame-title" x="138" y="435">Em cada semana da escala</text>
 <path class="line" d="M110,476 H348" marker-end="url(#arrow)"/>
-<text class="label" x="230" y="468" text-anchor="middle">7 dias antes: consegue ir?</text>
+<text class="label" x="230" y="468" text-anchor="middle">7 dias antes: confirme presença</text>
 <path class="line dashed" d="M350,520 H112" marker-end="url(#arrow)"/>
 <text class="label" x="230" y="512" text-anchor="middle">Confirma, ou avisa que não vai</text>
 <path class="line" d="M110,564 H348" marker-end="url(#arrow)"/>

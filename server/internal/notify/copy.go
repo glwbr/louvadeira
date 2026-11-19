@@ -55,7 +55,7 @@ func slotLine(d store.AssignmentDetail) string {
 func confirmQuestion(name, ministry string, occurrences []occurrence) string {
 	if len(occurrences) == 1 {
 		o := occurrences[0]
-		return fmt.Sprintf("🎶 %s · %s, %s, às %s · %s%s\nOi, %s! Você está na escala. Consegue ir?", ministry,
+		return fmt.Sprintf("🎶 %s · %s, %s, às %s · %s%s\nOi, %s! Você está na escala. Confirme sua presença:", ministry,
 			capitalize(weekday(o.date)), dayMonth(o.date), hour(o.startTime), joinNames(o.roles), communionMark(o.communion), firstName(name))
 	}
 	days := make([]string, len(occurrences))
@@ -64,7 +64,7 @@ func confirmQuestion(name, ministry string, occurrences []occurrence) string {
 		days[i] = weekday(o.date) + ", " + dayMonth(o.date)
 		lines[i] = serviceBullet(o.date, o.startTime, o.roles) + communionMark(o.communion)
 	}
-	return fmt.Sprintf("🎶 %s · %s\nOi, %s! Você está na escala:\n%s\nConsegue ir?", ministry, capitalize(joinNames(days)),
+	return fmt.Sprintf("🎶 %s · %s\nOi, %s! Você está na escala:\n%s\nConfirme sua presença:", ministry, capitalize(joinNames(days)),
 		firstName(name), strings.Join(lines, "\n"))
 }
 
