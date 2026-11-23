@@ -21,8 +21,8 @@ def ciclo_do_mes():
         "A partir do dia 20, a louvadeira pergunta a cada integrante em quais cultos do mês seguinte ele não pode, "
         "e o integrante marca os dias. Dois dias depois a louvadeira lembra quem não respondeu. Três dias depois "
         "manda o rascunho ao líder, que aprova, e a escala do mês é publicada no grupo do ministério. Em cada "
-        "semana da escala, a louvadeira pede confirmação ao integrante sete dias antes, recebe a resposta, manda "
-        "um lembrete na véspera do culto e avisa o líder, três dias antes, sobre quem falta responder.",
+        "semana da escala, a louvadeira pede confirmação ao integrante sete dias antes, recebe a resposta, avisa o "
+        "líder, três dias antes, sobre quem falta responder e, dois dias antes, publica a escala do culto no grupo.",
         [
             participant("container", 20, 180, "louvadeira", "[Servidor]", fim),
             participant("person", 260, 180, "Integrante", "[Pessoa]", fim),
@@ -38,8 +38,8 @@ def ciclo_do_mes():
             frame(130, 420, 790, 204, "Em cada semana da escala"),
             message(476, servidor, integrante, "7 dias antes: confirme presença"),
             message(520, integrante, servidor, "Confirma, ou avisa que não vai", dashed=True),
-            message(564, servidor, integrante, "Véspera: lembrete do culto"),
-            message(608, servidor, lider, "3 dias antes: falta responder", at=entre_integrante_e_lider),
+            message(564, servidor, lider, "3 dias antes: falta responder", at=entre_integrante_e_lider),
+            message(608, servidor, grupo, "2 dias antes: escala do culto", at=entre_lider_e_grupo),
         ],
     )
 

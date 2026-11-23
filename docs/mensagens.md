@@ -34,11 +34,14 @@ Uma enquete do WhatsApp aceita 12 opções. Um mês com mais de 11 cultos é div
 | Quando | Para quem | Mensagem |
 | --- | --- | --- |
 | 7 dias antes do primeiro culto da semana, a partir das 18h | Cada escalado que ainda não confirmou | Enquete de confirmação |
-| Véspera do culto, a partir das 10h | Cada escalado que não avisou ausência | Lembrete do culto, com a função |
+| 2 dias antes do culto, a partir das 18h | Grupo do ministério, marcando quem serve | A escala do culto: quem serve em cada função e as funções sem ninguém |
+| 2 dias antes do culto, a partir das 18h, em ministério sem grupo | Cada escalado que não avisou ausência | "Você está na escala", com a função |
 | A partir de 3 dias antes do culto, depois das 9h | Cada líder | "Falta responder", com os nomes de quem recebeu a enquete há mais de 24 horas e não respondeu |
 | A partir de 3 dias antes do culto, depois das 9h | Cada líder | Enquete sobre o culto com função abaixo do mínimo: "✅ Segue assim", "📣 Pedir no grupo" ou "✏️ Vou ajustar no app" |
 
-A confirmação sai às 18h: a equipe já saiu do trabalho e ainda não está em um culto da noite.
+A confirmação e o lembrete saem às 18h: a equipe já saiu do trabalho e ainda não está em um culto da noite. O
+lembrete sai dois dias antes para que um ensaio na véspera, como o de sábado para o culto de domingo, já esteja
+avisado. A marcação no grupo notifica quem serve mesmo com o grupo silenciado.
 
 No rodízio por culto, a confirmação é pedida 7 dias antes de cada culto.
 

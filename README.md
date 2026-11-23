@@ -23,7 +23,7 @@ bot envia, com pessoas fictícias. No celular, elas aparecem com a aparência do
 
 <p>
   <img src="docs/assets/telas/whatsapp-enquete-do-mes.png" width="250" align="top" alt="Enquete do mês: o bot pergunta em quais cultos de dezembro a pessoa não pode, ela marca quatro dias e recebe a confirmação.">
-  <img src="docs/assets/telas/whatsapp-confirmacao.png" width="250" align="top" alt="Confirmação da semana: a pessoa responde que vai nos dois cultos, recebe o confirmado e, na véspera, o lembrete.">
+  <img src="docs/assets/telas/whatsapp-confirmacao.png" width="250" align="top" alt="Confirmação da semana: a pessoa responde que vai nos dois cultos e recebe o confirmado.">
   <img src="docs/assets/telas/whatsapp-substituicao.png" width="250" align="top" alt="Convite para substituir: a pessoa aceita ficar no lugar de quem não pode e recebe o combinado.">
 </p>
 

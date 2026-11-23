@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 660" width="940" height="660" role="img" aria-labelledby="title desc">
   <title id="title">O ciclo do mês</title>
-  <desc id="desc">A partir do dia 20, a louvadeira pergunta a cada integrante em quais cultos do mês seguinte ele não pode, e o integrante marca os dias. Dois dias depois a louvadeira lembra quem não respondeu. Três dias depois manda o rascunho ao líder, que aprova, e a escala do mês é publicada no grupo do ministério. Em cada semana da escala, a louvadeira pede confirmação ao integrante sete dias antes, recebe a resposta, manda um lembrete na véspera do culto e avisa o líder, três dias antes, sobre quem falta responder.</desc>
+  <desc id="desc">A partir do dia 20, a louvadeira pergunta a cada integrante em quais cultos do mês seguinte ele não pode, e o integrante marca os dias. Dois dias depois a louvadeira lembra quem não respondeu. Três dias depois manda o rascunho ao líder, que aprova, e a escala do mês é publicada no grupo do ministério. Em cada semana da escala, a louvadeira pede confirmação ao integrante sete dias antes, recebe a resposta, avisa o líder, três dias antes, sobre quem falta responder e, dois dias antes, publica a escala do culto no grupo.</desc>
   <style>
     svg {
       --bg: #ffffff;
@@ -107,8 +107,8 @@
 <text class="label" x="230" y="468" text-anchor="middle">7 dias antes: confirme presença</text>
 <path class="line dashed" d="M350,520 H112" marker-end="url(#arrow)"/>
 <text class="label" x="230" y="512" text-anchor="middle">Confirma, ou avisa que não vai</text>
-<path class="line" d="M110,564 H348" marker-end="url(#arrow)"/>
-<text class="label" x="230" y="556" text-anchor="middle">Véspera: lembrete do culto</text>
-<path class="line" d="M110,608 H588" marker-end="url(#arrow)"/>
-<text class="label" x="470" y="600" text-anchor="middle">3 dias antes: falta responder</text>
+<path class="line" d="M110,564 H588" marker-end="url(#arrow)"/>
+<text class="label" x="470" y="556" text-anchor="middle">3 dias antes: falta responder</text>
+<path class="line" d="M110,608 H828" marker-end="url(#arrow)"/>
+<text class="label" x="710" y="600" text-anchor="middle">2 dias antes: escala do culto</text>
 </svg>

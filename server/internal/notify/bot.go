@@ -24,7 +24,7 @@ const (
 	lateNotice     = 72 * time.Hour
 	firstHour      = 8
 	lastHour       = 21
-	reminderHour   = 10
+	roundHour      = 10
 	pendingHour    = 9
 	actionConfirm  = "confirm"
 	actionDecline  = "decline"
@@ -234,14 +234,12 @@ func (b *Bot) Tick(ctx context.Context) {
 	}
 	b.retryInvites(ctx)
 	b.sendConfirmations(ctx, future, now)
-	if now.Hour() >= reminderHour {
-		b.sendReminders(ctx, future, now.AddDate(0, 0, 1).Format("2006-01-02"))
-	}
+	b.remindServices(ctx, future, now)
 	if now.Hour() >= pendingHour {
 		b.alertPending(ctx, future, now)
 		b.alertGaps(ctx, now)
 	}
-	if now.Hour() >= reminderHour {
+	if now.Hour() >= roundHour {
 		b.availabilityRound(ctx, now)
 	}
 }
@@ -357,43 +355,6 @@ func (b *Bot) askConfirmation(ctx context.Context, slots []store.AssignmentDetai
 		options = append(options, store.PollOption{Label: optionNotGoingAny, Action: actionDecline, Assignments: all})
 	}
 	return b.sendPoll(ctx, store.PollConfirm, store.Person{ID: first.PersonID, Name: first.PersonName, Phone: first.Phone}, question, options, false)
-}
-
-func (b *Bot) sendReminders(ctx context.Context, upcoming []store.AssignmentDetail, tomorrow string) {
-	type key struct {
-		person  int64
-		service int64
-	}
-	byKey := map[key][]store.AssignmentDetail{}
-	var order []key
-	for _, d := range upcoming {
-		if d.Date != tomorrow || d.Status == store.AssignmentDeclined {
-			continue
-		}
-		k := key{d.PersonID, d.ServiceID}
-		if _, ok := byKey[k]; !ok {
-			order = append(order, k)
-		}
-		byKey[k] = append(byKey[k], d)
-	}
-	for _, k := range order {
-		slots := byKey[k]
-		d := slots[0]
-		if !b.allows(d.Phone) {
-			continue
-		}
-		mark := fmt.Sprintf("remind:%d:%s:%d", k.person, d.Date, k.service)
-		if first, err := b.Store.MarkNotified(ctx, mark, b.now()); err != nil || !first {
-			continue
-		}
-		roles := make([]string, len(slots))
-		for i, slot := range slots {
-			roles[i] = slot.RoleName
-		}
-		if !b.send(ctx, d.Phone, reminderText(d, roles)) {
-			_ = b.Store.UnmarkNotified(ctx, mark)
-		}
-	}
 }
 
 func (b *Bot) alertPending(ctx context.Context, upcoming []store.AssignmentDetail, now time.Time) {

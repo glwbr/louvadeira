@@ -43,7 +43,7 @@ avisada três dias antes do culto.
 O ciclo tem duas partes: a rodada do mês, que monta e publica a escala do mês seguinte, e as semanas dos cultos, em
 que a louvadeira pede as confirmações.
 
-![Ciclo do mês: a partir do dia 20 a louvadeira pergunta a cada integrante em quais cultos não pode, dois dias depois lembra quem não respondeu, três dias depois manda o rascunho para um líder aprovar e publica a escala no grupo. Em cada semana da escala, pede confirmação sete dias antes e lembra na véspera.](assets/ciclo-do-mes.svg)
+![Ciclo do mês: a partir do dia 20 a louvadeira pergunta a cada integrante em quais cultos não pode, dois dias depois lembra quem não respondeu, três dias depois manda o rascunho para um líder aprovar e publica a escala no grupo. Em cada semana da escala, pede confirmação sete dias antes e, dois dias antes de cada culto, publica a escala dele no grupo.](assets/ciclo-do-mes.svg)
 
 A rodada começa no dia 20. Cada integrante da equipe recebe no privado uma enquete com os cultos do mês seguinte e
 marca aqueles em que não pode. Cada dia marcado vira uma ausência, e quem muda a resposta muda as ausências junto.
@@ -68,12 +68,13 @@ elas aparecem com a aparência do WhatsApp.
 Uma escala publicada não é gerada de novo. A partir da publicação, toda mudança é uma substituição ou um ajuste
 feito à mão no app.
 
-Em cada semana da escala, a louvadeira pede confirmação sete dias antes do primeiro culto e manda um lembrete na
-véspera de cada culto. No rodízio por semana, uma única enquete cobre todos os cultos da semana.
+Em cada semana da escala, a louvadeira pede confirmação sete dias antes do primeiro culto. Dois dias antes de cada
+culto, publica a escala dele no grupo do ministério, marcando quem serve. No rodízio por semana, uma única enquete
+cobre todos os cultos da semana.
 [Mensagens e prazos](mensagens.md) traz a lista completa, com horários e destinatários.
 
 <p>
-  <img src="assets/telas/whatsapp-confirmacao.png" width="300" align="top" alt="Confirmação da semana: a pessoa responde que vai nos dois cultos, recebe o confirmado e, na véspera, o lembrete.">
+  <img src="assets/telas/whatsapp-confirmacao.png" width="300" align="top" alt="Confirmação da semana: a pessoa responde que vai nos dois cultos e recebe o confirmado.">
 </p>
 
 ## Como a escala é montada

@@ -430,7 +430,7 @@ func TestTestModeSkipsBlockedPeopleWithoutForgettingThem(t *testing.T) {
 	}
 }
 
-func TestRemindersAndPendingAlerts(t *testing.T) {
+func TestPendingAlertsWaitADayAfterAsking(t *testing.T) {
 	w := newWorld(t)
 	w.clock = time.Date(2026, 11, 13, 10, 0, 0, 0, saoPaulo)
 	w.bot.Tick(context.Background())
@@ -439,11 +439,6 @@ func TestRemindersAndPendingAlerts(t *testing.T) {
 	}
 	w.clock = time.Date(2026, 11, 14, 11, 0, 0, 0, saoPaulo)
 	w.bot.Tick(context.Background())
-	bassist := w.slotOf("2026-11-15", "Baixo").PersonName
-	if !containsText(w.fake.to(w.phone(bassist)), "Amanhã tem culto") || !containsText(w.fake.to(w.phone(bassist)), "• Domingo, 15/11, às 19h · Baixo") ||
-		!containsText(w.fake.to(w.phone(bassist)), "Santa Ceia") {
-		t.Fatalf("reminder = %+v", w.fake.to(w.phone(bassist)))
-	}
 	if !containsText(w.fake.to(w.phone("Líder")), "⏳ *Falta responder* sobre domingo, 15/11, às 19h") {
 		t.Fatalf("leader = %+v", w.fake.to(w.phone("Líder")))
 	}
@@ -587,7 +582,7 @@ func TestAskNowSendsOnlyTheChosenDaysEvenAtNight(t *testing.T) {
 	w.clock = time.Date(2026, 11, 14, 8, 0, 0, 0, saoPaulo)
 	w.bot.Tick(context.Background())
 	for _, m := range w.fake.sent {
-		if strings.Contains(m.text, "15/11") {
+		if m.options != nil && strings.Contains(m.text, "15/11") {
 			t.Fatalf("the morning tick asked again about Sunday: %q", m.text)
 		}
 	}

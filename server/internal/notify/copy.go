@@ -72,12 +72,59 @@ func confirmedReply(name string) string {
 	return fmt.Sprintf("✅ *Confirmado*, %s! Obrigado 🙌\nSe surgir algum imprevisto, é só mudar sua resposta na enquete.", firstName(name))
 }
 
+const unforeseenHint = "Se surgir algum imprevisto, é só mudar sua resposta na enquete de confirmação."
+
 func reminderText(d store.AssignmentDetail, roles []string) string {
-	text := fmt.Sprintf("🎶 *Amanhã tem culto, %s!*\n%s", firstName(d.PersonName), serviceBullet(d.Date, d.StartTime, roles))
+	text := fmt.Sprintf("🎶 *Você está na escala de %s, %s!*\n%s", weekday(d.Date), firstName(d.PersonName),
+		serviceBullet(d.Date, d.StartTime, roles))
 	if d.Communion {
 		text += "\n🍷 Dia de Santa Ceia"
 	}
-	return text + "\nSe surgir algum imprevisto, é só mudar sua resposta na enquete de confirmação."
+	return text + "\n" + unforeseenHint
+}
+
+/**
+ * NOTE: The group's reminder of one service: one line per role marking who serves, leaving out who said they cannot
+ * go, then the roles left with nobody. It returns the people to mark, once each.
+ */
+func lineupText(ministry store.MinistryDetail, sv store.ScheduleService) (string, []store.Person) {
+	phones := map[int64]string{}
+	for _, m := range ministry.Members {
+		phones[m.PersonID] = m.Phone
+	}
+	var lines, missing []string
+	var marked []store.Person
+	seen := map[int64]bool{}
+	for _, role := range sv.Roles {
+		var names []string
+		for _, slot := range role.Slots {
+			if slot.PersonID == 0 || slot.Status == store.AssignmentDeclined {
+				continue
+			}
+			person := store.Person{ID: slot.PersonID, Name: slot.PersonName, Phone: phones[slot.PersonID]}
+			if name := mentionOf(person); !contains(names, name) {
+				names = append(names, name)
+			}
+			if person.Phone != "" && !seen[person.ID] {
+				seen[person.ID] = true
+				marked = append(marked, person)
+			}
+		}
+		if len(names) == 0 {
+			missing = append(missing, role.Name)
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("• %s: %s", role.Name, joinNames(names)))
+	}
+	if len(missing) > 0 {
+		lines = append(lines, "⚠️ Falta: "+joinNames(missing))
+	}
+	if sv.Communion {
+		lines = append(lines, "🍷 Dia de Santa Ceia")
+	}
+	text := fmt.Sprintf("Paz, pessoal! 🎶 Escala do *%s* de %s:\n*%s*, %s, às %s\n\n%s\n\n%s", ministry.Name, weekday(sv.Date),
+		sv.Name, dayMonth(sv.Date), hour(sv.StartTime), strings.Join(lines, "\n"), unforeseenHint)
+	return text, marked
 }
 
 func pendingAlert(d store.AssignmentDetail, names []string) string {
