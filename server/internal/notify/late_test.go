@@ -3,6 +3,7 @@ package notify_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -94,5 +95,36 @@ func TestSwitchingTheDayOffTakesTheFirstDayBack(t *testing.T) {
 	}
 	if slot := w.slotOf("2026-11-22", "Baixo"); slot.Status != store.AssignmentDeclined || !slot.CoverOpen {
 		t.Fatalf("sunday = %+v, want declined with a substitute sought", slot)
+	}
+}
+
+func TestAPendingAlertThatFailedToSendGoesOutOnTheNextTick(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	w.bot.Tick(ctx)
+	leader := w.phone("Líder")
+	w.fake.reset()
+	w.fake.fail = func(m message) error {
+		if m.to == leader {
+			return errors.New("websocket EOF")
+		}
+		return nil
+	}
+	w.clock = time.Date(2026, 11, 16, 20, 0, 0, 0, saoPaulo)
+	w.bot.Tick(ctx)
+
+	w.fake.fail = nil
+	for _, minute := range []int{5, 10} {
+		w.clock = time.Date(2026, 11, 16, 20, minute, 0, 0, saoPaulo)
+		w.bot.Tick(ctx)
+	}
+	alerts := 0
+	for _, m := range w.fake.to(leader) {
+		if strings.Contains(m.text, "Falta responder") && strings.Contains(m.text, "19/11") {
+			alerts++
+		}
+	}
+	if alerts != 1 {
+		t.Fatalf("leader got %d alerts about 19/11, want 1: %+v", alerts, w.fake.to(leader))
 	}
 }

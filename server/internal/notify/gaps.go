@@ -49,17 +49,12 @@ func (b *Bot) alertGaps(ctx context.Context, now time.Time) {
 	}
 	services, byService := groupBy(open, func(g store.ServiceGap) gapService { return gapService{g.MinistryID, g.ServiceID, g.Date} })
 	for _, k := range services {
-		b.once(ctx, gapKey(k), func(ctx context.Context) bool { return b.askAboutGaps(ctx, byService[k]) > 0 })
+		b.askAboutGaps(ctx, gapKey(k), byService[k])
 	}
 }
 
-func (b *Bot) askAboutGaps(ctx context.Context, gaps []store.ServiceGap) int {
+func (b *Bot) askAboutGaps(ctx context.Context, key string, gaps []store.ServiceGap) {
 	first := gaps[0]
-	leaders, err := b.Store.Leaders(ctx, first.MinistryID)
-	if err != nil {
-		b.Log.Error("buscar líderes", "erro", err)
-		return 0
-	}
 	about := store.PollOption{Ministry: first.MinistryID, Service: first.ServiceID, Date: first.Date, Time: first.StartTime}
 	keep, ask, edit := about, about, about
 	keep.Label, keep.Action = optionGapKeep, actionGapKeep
@@ -69,13 +64,9 @@ func (b *Bot) askAboutGaps(ctx context.Context, gaps []store.ServiceGap) int {
 	if b.allows(first.WhatsAppGroup) {
 		options = []store.PollOption{keep, ask, edit}
 	}
-	asked := 0
-	for _, leader := range leaders {
-		if b.sendPoll(ctx, store.PollConfirm, leader, gapQuestion(leader.Name, gaps), options, false) {
-			asked++
-		}
-	}
-	return asked
+	b.alertEachLeader(ctx, first.MinistryID, key, func(ctx context.Context, leader store.Person) bool {
+		return b.sendPoll(ctx, store.PollConfirm, leader, gapQuestion(leader.Name, gaps), options, false)
+	})
 }
 
 /**

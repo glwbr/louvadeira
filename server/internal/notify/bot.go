@@ -422,12 +422,24 @@ func (b *Bot) alertPending(ctx context.Context, upcoming []store.AssignmentDetai
 		}
 	}
 	for _, k := range order {
-		mark := fmt.Sprintf("pending:%d:%s:%d", k.ministry, k.date, k.service)
-		if first, err := b.Store.MarkNotified(ctx, mark, b.now()); err != nil || !first {
-			continue
-		}
-		d := sample[k]
-		b.tellLeaders(ctx, k.ministry, pendingAlert(d, pending[k]))
+		text := pendingAlert(sample[k], pending[k])
+		b.alertEachLeader(ctx, k.ministry, fmt.Sprintf("pending:%d:%s:%d", k.ministry, k.date, k.service), func(ctx context.Context, leader store.Person) bool {
+			return b.send(ctx, leader.Phone, text)
+		})
+	}
+}
+
+/**
+ * NOTE: A scheduled alert goes to each leader once, so a leader whose send failed still gets it on a later tick.
+ */
+func (b *Bot) alertEachLeader(ctx context.Context, ministryID int64, key string, send func(context.Context, store.Person) bool) {
+	leaders, err := b.Store.Leaders(ctx, ministryID)
+	if err != nil {
+		b.Log.Error("buscar líderes", "erro", err)
+		return
+	}
+	for _, leader := range leaders {
+		b.once(ctx, fmt.Sprintf("%s:leader:%d", key, leader.ID), func(ctx context.Context) bool { return send(ctx, leader) })
 	}
 }
 
