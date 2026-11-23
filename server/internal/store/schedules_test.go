@@ -350,3 +350,18 @@ func TestGeneratorSkipsRepeatingAbsences(t *testing.T) {
 		}
 	}
 }
+
+func TestARoleWithPeopleInAnUpcomingPublishedScheduleIsNotDeleted(t *testing.T) {
+	s, ctx := newStore(t), context.Background()
+	w := setUpWorship(t, s)
+	_ = s.GenerateDraft(ctx, w.ministry.ID, "2026-12", generatedAt)
+	if err := s.PublishSchedule(ctx, w.ministry.ID, "2026-12", generatedAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteRole(ctx, w.ministry.ID, w.bass.ID, "2026-12-10"); !isValidation(err) {
+		t.Fatalf("deleting a role still scheduled: err = %v", err)
+	}
+	if err := s.DeleteRole(ctx, w.ministry.ID, w.bass.ID, "2027-01-04"); err != nil {
+		t.Fatalf("deleting a role only in past schedules: err = %v", err)
+	}
+}

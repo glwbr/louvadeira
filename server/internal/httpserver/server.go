@@ -326,6 +326,13 @@ func (d Deps) now() time.Time {
 	return time.Now()
 }
 
+func (d Deps) today() string {
+	if d.Bot != nil {
+		return d.Bot.Today()
+	}
+	return d.now().Format("2006-01-02")
+}
+
 /**
  * CONSTRAINT: Requests must be JSON. Together with SameSite=Lax cookies this keeps other sites from posting forms
  * into the API with the leader's session.

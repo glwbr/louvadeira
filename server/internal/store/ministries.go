@@ -296,7 +296,21 @@ func (s *Store) UpdateRole(ctx context.Context, ministryID, roleID int64, in Rol
 	return err
 }
 
-func (s *Store) DeleteRole(ctx context.Context, ministryID, roleID int64) error {
+/**
+ * CONSTRAINT: A role with people in a published schedule from today on is not deleted. Its places would vanish from
+ * a schedule the team already has, together with the open swaps and polls about them.
+ */
+func (s *Store) DeleteRole(ctx context.Context, ministryID, roleID int64, today string) error {
+	var scheduled bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM assignments a JOIN schedules sc ON sc.id = a.schedule_id
+			WHERE a.role_id = ? AND sc.status = 'published' AND a.service_date >= ? AND a.person_id IS NOT NULL)`, roleID, today).Scan(&scheduled); err != nil {
+		return err
+	}
+	if scheduled {
+		return invalid("essa função tem gente escalada em cultos que ainda vão acontecer; tire as pessoas dela nessas escalas antes de apagar")
+	}
 	return requireAffected(s.db.ExecContext(ctx, "DELETE FROM roles WHERE id = ? AND ministry_id = ?", roleID, ministryID))
 }
 

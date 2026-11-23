@@ -145,7 +145,7 @@ func (d Deps) deleteRole(w http.ResponseWriter, r *http.Request) {
 	if !ok || !okRole {
 		return
 	}
-	d.respond(w, http.StatusNoContent, nil, d.Store.DeleteRole(r.Context(), id, roleID))
+	d.respond(w, http.StatusNoContent, nil, d.Store.DeleteRole(r.Context(), id, roleID, d.today()))
 }
 
 func (d Deps) putMember(w http.ResponseWriter, r *http.Request) {
