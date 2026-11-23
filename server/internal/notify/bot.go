@@ -20,7 +20,7 @@ import (
 const (
 	confirmDays    = 7
 	confirmHour    = 18
-	pendingAhead   = 3 * 24 * time.Hour
+	pendingDays    = 3
 	answerTime     = 24 * time.Hour
 	lateNotice     = 72 * time.Hour
 	firstHour      = 8
@@ -426,7 +426,8 @@ func (b *Bot) alertPending(ctx context.Context, upcoming []store.AssignmentDetai
 	sample := map[key]store.AssignmentDetail{}
 	var order []key
 	for _, d := range upcoming {
-		if d.Status != store.AssignmentScheduled || b.serviceTime(d).Sub(now) > pendingAhead {
+		// NOTE: Counted in days, from 9h: a Sunday service is chased on Thursday morning, never at Thursday's service.
+		if d.Status != store.AssignmentScheduled || d.Date > now.AddDate(0, 0, pendingDays).Format("2006-01-02") {
 			continue
 		}
 		asked, ok := b.Store.NotifiedAt(ctx, confirmKey(d.MinistryID, d.PersonID, store.GroupKey(d)))

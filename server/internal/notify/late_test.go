@@ -283,3 +283,27 @@ func TestAnInvitationThatCannotBeSentForADayCountsAsANo(t *testing.T) {
 		t.Fatalf("slot = %+v, want the swap closed", s)
 	}
 }
+
+func TestThePendingAlertGoesOutAt9hThreeDaysBefore(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	w.bot.Tick(ctx)
+	pending := func() bool {
+		for _, m := range w.fake.to(w.phone("Líder")) {
+			if strings.Contains(m.text, "Falta responder* sobre domingo, 22/11") {
+				return true
+			}
+		}
+		return false
+	}
+	w.clock = time.Date(2026, 11, 19, 8, 30, 0, 0, saoPaulo)
+	w.bot.Tick(ctx)
+	if pending() {
+		t.Fatal("alerted before 9h")
+	}
+	w.clock = time.Date(2026, 11, 19, 9, 0, 0, 0, saoPaulo)
+	w.bot.Tick(ctx)
+	if !pending() {
+		t.Fatalf("no alert at 9h on thursday about sunday: %+v", w.fake.to(w.phone("Líder")))
+	}
+}
