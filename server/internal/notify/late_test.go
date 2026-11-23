@@ -128,3 +128,26 @@ func TestAPendingAlertThatFailedToSendGoesOutOnTheNextTick(t *testing.T) {
 		t.Fatalf("leader got %d alerts about 19/11, want 1: %+v", alerts, w.fake.to(leader))
 	}
 }
+
+func TestTheAnswerToADeclineNamesWhoIsBeingInvitedBeforeTheyAre(t *testing.T) {
+	w := newWorld(t)
+	var queued []func()
+	w.bot.Async = func(task func()) { queued = append(queued, task) }
+	slot := w.slotOf("2026-11-19", "Baixo")
+	other := map[string]string{"Edu": "Fred", "Fred": "Edu"}[slot.PersonName]
+
+	requests, err := w.bot.Decline(context.Background(), []int64{slot.AssignmentID}, false)
+	if err != nil || len(requests) != 1 {
+		t.Fatalf("requests = %+v, err %v", requests, err)
+	}
+	if invites := requests[0].Invites; len(invites) != 1 || invites[0].Name != other {
+		t.Fatalf("invites = %+v, want %s", invites, other)
+	}
+	if len(w.fake.sent) != 0 || len(queued) != 1 {
+		t.Fatalf("the invitations should still be queued: sent %d, queued %d", len(w.fake.sent), len(queued))
+	}
+	queued[0]()
+	if len(polls(w.fake.to(w.phone(other)))) != 1 {
+		t.Fatalf("%s got no invite", other)
+	}
+}

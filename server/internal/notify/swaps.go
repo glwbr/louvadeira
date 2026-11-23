@@ -95,6 +95,10 @@ func (b *Bot) decline(ctx context.Context, assignmentIDs []int64, byMember bool,
 		b.Log.Error("abrir troca", "erro", failure)
 	}
 
+	planned := make([][]store.CoverGuest, len(swaps))
+	for i, s := range swaps {
+		planned[i] = b.plannedGuests(ctx, s)
+	}
 	b.later(ctx, func(ctx context.Context) {
 		b.inviteCovers(ctx, swaps, why)
 		for _, s := range swaps {
@@ -109,14 +113,35 @@ func (b *Bot) decline(ctx context.Context, assignmentIDs []int64, byMember bool,
 	})
 
 	requests := make([]store.CoverRequest, 0, len(swaps))
-	for _, s := range swaps {
+	for i, s := range swaps {
 		result, err := b.Store.CoverRequestResult(ctx, s.request)
 		if err != nil {
 			return requests, err
 		}
+		if len(result.Request.Invites) == 0 && result.Request.Status == store.CoverOpen {
+			result.Request.Invites = planned[i]
+		}
 		requests = append(requests, result.Request)
 	}
 	return requests, nil
+}
+
+/**
+ * NOTE: Who is about to be invited, for the answer to the app: the invitations themselves go out in the background,
+ * after the answer, and are only recorded as each one is sent.
+ */
+func (b *Bot) plannedGuests(ctx context.Context, s *swap) []store.CoverGuest {
+	guests := []store.CoverGuest{}
+	candidates, err := b.Store.CoverCandidates(ctx, s.detail.AssignmentID)
+	if err != nil {
+		return guests
+	}
+	for _, c := range candidates {
+		if b.allows(c.Phone) {
+			guests = append(guests, store.CoverGuest{PersonID: c.ID, Name: c.Name})
+		}
+	}
+	return guests
 }
 
 func (b *Bot) openSwap(ctx context.Context, assignmentID int64) (*swap, error) {
