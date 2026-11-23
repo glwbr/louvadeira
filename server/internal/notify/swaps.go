@@ -244,8 +244,9 @@ func (b *Bot) inviteCovers(ctx context.Context, swaps []*swap, why absence) {
 }
 
 /**
- * NOTE: When the candidate already has an invitation for the same service and role, the new place joins that
- * invitation instead of becoming another message. Someone who already said no to that service is not asked again.
+ * NOTE: When the candidate already has an open invitation for the same service and role, the new place joins that
+ * invitation instead of becoming another message. Someone who already said no to that service is not asked again. An
+ * invitation whose places were all settled is over: the candidate was told so, and gets a new one.
  */
 func (b *Bot) joinInvitation(ctx context.Context, candidate store.Person, s *swap) bool {
 	polls, err := b.Store.PersonCoverPolls(ctx, candidate.ID)
@@ -262,10 +263,14 @@ func (b *Bot) joinInvitation(ctx context.Context, candidate store.Person, s *swa
 			if err != nil || !sameSlot(earlier.Assignment, s.detail) {
 				continue
 			}
+			refused := b.Store.InviteAnswer(ctx, ids[0], candidate.ID) == "no"
+			if !refused && !b.anyOpen(ctx, ids) {
+				continue
+			}
 			if err := b.Store.AddCoverInvite(ctx, s.request, candidate.ID); err != nil {
 				return false
 			}
-			if b.Store.InviteAnswer(ctx, ids[0], candidate.ID) == "no" {
+			if refused {
 				_, _ = b.Store.RefuseCover(ctx, s.request, candidate.ID, b.now())
 				return true
 			}
@@ -282,6 +287,15 @@ func (b *Bot) joinInvitation(ctx context.Context, candidate store.Person, s *swa
 				return false
 			}
 			s.invited = append(s.invited, candidate.Name)
+			return true
+		}
+	}
+	return false
+}
+
+func (b *Bot) anyOpen(ctx context.Context, requestIDs []int64) bool {
+	for _, id := range requestIDs {
+		if r, err := b.Store.CoverRequestResult(ctx, id); err == nil && r.Request.Status == store.CoverOpen {
 			return true
 		}
 	}

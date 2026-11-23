@@ -58,3 +58,25 @@ func TestAnAdminCannotOpenASwapForAServiceThatHappened(t *testing.T) {
 		t.Fatalf("sent %+v", w.fake.sent)
 	}
 }
+
+func TestDecliningAgainAfterComingBackInvitesTheSubstituteAgain(t *testing.T) {
+	w := newWorld(t)
+	w.bot.Tick(context.Background())
+	bassist := w.slotOf("2026-11-19", "Baixo").PersonName
+	other := map[string]string{"Edu": "Fred", "Fred": "Edu"}[bassist]
+	poll := w.fake.sentPollFor(t, w.phone(bassist), "19/11")
+	w.vote(poll, "😕 Não consigo na quinta (19/11)", false)
+	w.vote(poll, "✅ Vou nos dois", false)
+	if !containsText(w.fake.to(w.phone(other)), "Não precisa mais") {
+		t.Fatalf("%s was not released: %+v", other, w.fake.to(w.phone(other)))
+	}
+	w.fake.reset()
+
+	w.vote(poll, "😕 Não consigo na quinta (19/11)", false)
+	if invites := polls(w.fake.to(w.phone(other))); len(invites) != 1 {
+		t.Fatalf("%s got %d new invites, want 1", other, len(invites))
+	}
+	if slot := w.slotOf("2026-11-19", "Baixo"); !slot.CoverOpen {
+		t.Fatalf("slot = %+v", slot)
+	}
+}
