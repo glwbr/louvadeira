@@ -752,7 +752,7 @@ func (s *Store) coverRequests(ctx context.Context, where string, args ...any) ([
 func (s *Store) coverGuests(ctx context.Context, requestID int64) ([]CoverGuest, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT p.id, p.name, coalesce(ci.answer, '') FROM cover_invites ci JOIN people p ON p.id = ci.person_id
-		WHERE ci.request_id = ? ORDER BY p.name`, requestID)
+		WHERE ci.request_id = ? AND ci.sent = 1 ORDER BY p.name`, requestID)
 	if err != nil {
 		return nil, err
 	}
@@ -793,7 +793,7 @@ func (s *Store) coverResult(ctx context.Context, requestID int64) (CoverResult, 
 	}
 	result.Waiting, err = s.queryPeople(ctx, `
 		SELECT `+personColumnsP+` FROM cover_invites ci JOIN people p ON p.id = ci.person_id
-		WHERE ci.request_id = ? AND ci.answer IS NULL`, requestID)
+		WHERE ci.request_id = ? AND ci.answer IS NULL AND ci.sent = 1`, requestID)
 	return result, err
 }
 

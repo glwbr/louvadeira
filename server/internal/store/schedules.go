@@ -288,7 +288,7 @@ func (s *Store) SetAssignment(ctx context.Context, ministryID int64, month strin
 	for _, id := range settled {
 		waiting, err := s.queryPeople(ctx, `
 			SELECT `+personColumnsP+` FROM cover_invites ci JOIN people p ON p.id = ci.person_id
-			WHERE ci.request_id = ? AND ci.answer IS NULL`, id)
+			WHERE ci.request_id = ? AND ci.answer IS NULL AND ci.sent = 1`, id)
 		if err != nil {
 			return AssignmentChange{}, err
 		}

@@ -331,3 +331,32 @@ func TestADayOffInThePollKeepsAnAbsenceRegisteredElsewhere(t *testing.T) {
 		t.Fatalf("leader = %+v", w.fake.to(w.phone("Líder")))
 	}
 }
+
+func TestSomeoneNeverReachedIsNotReleasedNorListedAsInvited(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	w.bot.Tick(ctx)
+	slot := w.slotOf("2026-11-19", "Baixo")
+	other := map[string]string{"Edu": "Fred", "Fred": "Edu"}[slot.PersonName]
+	poll := w.fake.sentPollFor(t, w.phone(slot.PersonName), "19/11")
+	w.fake.fail = func(m message) error {
+		if m.to == w.phone(other) {
+			return errors.New("websocket EOF")
+		}
+		return nil
+	}
+	w.vote(poll, "😕 Não consigo na quinta (19/11)", false)
+	requests, _ := w.store.CoverRequestsForSchedule(ctx, w.ministry.ID, w.month)
+	for _, r := range requests {
+		if r.Status == store.CoverOpen && len(r.Invites) != 0 {
+			t.Fatalf("invites = %+v, want none while the send failed", r.Invites)
+		}
+	}
+	w.fake.fail = nil
+	w.fake.reset()
+
+	w.vote(poll, "✅ Vou nos dois", false)
+	if len(w.fake.to(w.phone(other))) != 0 {
+		t.Fatalf("%s got %+v about an invitation never sent", other, w.fake.to(w.phone(other)))
+	}
+}
