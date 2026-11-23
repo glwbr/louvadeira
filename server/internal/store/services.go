@@ -82,15 +82,40 @@ func (s *Store) CreateService(ctx context.Context, in ServiceInput) (Service, er
 		in.Name, in.Weekday, in.StartTime, in.CommunionWeek))
 }
 
-func (s *Store) UpdateService(ctx context.Context, id int64, in ServiceInput) (Service, error) {
+/**
+ * CONSTRAINT: A service with people in a published schedule from today on keeps its weekday and stays active. Its
+ * dates are already in those schedules, so another weekday would put them on the wrong day, and an inactive service
+ * would still be asked about. A new start time is fine: the dates stay right.
+ */
+func (s *Store) UpdateService(ctx context.Context, id int64, in ServiceInput, today string) (Service, error) {
 	in, err := in.clean()
 	if err != nil {
 		return Service{}, err
 	}
-	sv, err := scanService(s.db.QueryRowContext(ctx,
-		"UPDATE services SET name = ?, weekday = ?, start_time = ?, active = ?, communion_week = ? WHERE id = ? RETURNING "+serviceColumns,
-		in.Name, in.Weekday, in.StartTime, boolInt(in.Active), in.CommunionWeek, id))
-	return sv, notFoundIfNoRows(err)
+	var sv Service
+	err = s.inTx(ctx, func(tx *sql.Tx) error {
+		current, err := scanService(tx.QueryRowContext(ctx, "SELECT "+serviceColumns+" FROM services WHERE id = ?", id))
+		if err != nil {
+			return notFoundIfNoRows(err)
+		}
+		if current.Weekday != in.Weekday || (current.Active && !in.Active) {
+			var scheduled bool
+			if err := tx.QueryRowContext(ctx, `
+				SELECT EXISTS (
+					SELECT 1 FROM assignments a JOIN schedules sc ON sc.id = a.schedule_id
+					WHERE a.service_id = ? AND sc.status = 'published' AND a.service_date >= ? AND a.person_id IS NOT NULL)`, id, today).Scan(&scheduled); err != nil {
+				return err
+			}
+			if scheduled {
+				return invalid("esse culto tem gente escalada daqui para frente; tire as pessoas dele nas escalas publicadas antes de mudar o dia ou desativar")
+			}
+		}
+		sv, err = scanService(tx.QueryRowContext(ctx,
+			"UPDATE services SET name = ?, weekday = ?, start_time = ?, active = ?, communion_week = ? WHERE id = ? RETURNING "+serviceColumns,
+			in.Name, in.Weekday, in.StartTime, boolInt(in.Active), in.CommunionWeek, id))
+		return notFoundIfNoRows(err)
+	})
+	return sv, err
 }
 
 /**

@@ -222,7 +222,7 @@ func TestServiceValidationAndUpdate(t *testing.T) {
 	if err != nil || !sv.Active || sv.StartTime != "07:30" {
 		t.Fatalf("service = %+v, err = %v", sv, err)
 	}
-	sv, err = s.UpdateService(ctx, sv.ID, store.ServiceInput{Name: "Culto de terça", Weekday: 2, StartTime: "19:30", Active: false})
+	sv, err = s.UpdateService(ctx, sv.ID, store.ServiceInput{Name: "Culto de terça", Weekday: 2, StartTime: "19:30", Active: false}, "2026-11-20")
 	if err != nil || sv.Active || sv.StartTime != "19:30" {
 		t.Fatalf("updated = %+v, err = %v", sv, err)
 	}

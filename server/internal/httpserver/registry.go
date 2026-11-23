@@ -62,7 +62,7 @@ func (d Deps) updateService(w http.ResponseWriter, r *http.Request) {
 	if !ok || !decodeJSON(w, r, &in) {
 		return
 	}
-	service, err := d.Store.UpdateService(r.Context(), id, in)
+	service, err := d.Store.UpdateService(r.Context(), id, in, d.today())
 	d.respond(w, http.StatusOK, service, err)
 }
 

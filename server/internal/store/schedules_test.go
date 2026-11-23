@@ -231,7 +231,7 @@ func TestCommunionSundaysAreMarked(t *testing.T) {
 	third := 3
 	for _, sv := range services {
 		if sv.Weekday == 0 {
-			updated, err := s.UpdateService(ctx, sv.ID, store.ServiceInput{Name: sv.Name, Weekday: 0, StartTime: sv.StartTime, Active: true, CommunionWeek: &third})
+			updated, err := s.UpdateService(ctx, sv.ID, store.ServiceInput{Name: sv.Name, Weekday: 0, StartTime: sv.StartTime, Active: true, CommunionWeek: &third}, "2026-11-20")
 			if err != nil || updated.CommunionWeek == nil || *updated.CommunionWeek != 3 {
 				t.Fatalf("updated = %+v, err = %v", updated, err)
 			}
@@ -363,5 +363,35 @@ func TestARoleWithPeopleInAnUpcomingPublishedScheduleIsNotDeleted(t *testing.T) 
 	}
 	if err := s.DeleteRole(ctx, w.ministry.ID, w.bass.ID, "2027-01-04"); err != nil {
 		t.Fatalf("deleting a role only in past schedules: err = %v", err)
+	}
+}
+
+func TestAServiceInAnUpcomingPublishedScheduleKeepsItsDayAndStaysActive(t *testing.T) {
+	s, ctx := newStore(t), context.Background()
+	w := setUpWorship(t, s)
+	_ = s.GenerateDraft(ctx, w.ministry.ID, "2026-12", generatedAt)
+	if err := s.PublishSchedule(ctx, w.ministry.ID, "2026-12", generatedAt); err != nil {
+		t.Fatal(err)
+	}
+	services, _ := s.ListServices(ctx)
+	thursday := services[1]
+	if thursday.Weekday != 4 {
+		t.Fatalf("services = %+v", services)
+	}
+	in := store.ServiceInput{Name: thursday.Name, Weekday: 6, StartTime: thursday.StartTime, Active: true}
+	if _, err := s.UpdateService(ctx, thursday.ID, in, "2026-12-10"); !isValidation(err) {
+		t.Fatalf("moving to saturday: err = %v", err)
+	}
+	in.Weekday, in.Active = 4, false
+	if _, err := s.UpdateService(ctx, thursday.ID, in, "2026-12-10"); !isValidation(err) {
+		t.Fatalf("deactivating: err = %v", err)
+	}
+	in.Active, in.StartTime = true, "20:00"
+	if _, err := s.UpdateService(ctx, thursday.ID, in, "2026-12-10"); err != nil {
+		t.Fatalf("a new start time: err = %v", err)
+	}
+	in.Weekday = 6
+	if _, err := s.UpdateService(ctx, thursday.ID, in, "2027-01-04"); err != nil {
+		t.Fatalf("moving once the schedules are past: err = %v", err)
 	}
 }
