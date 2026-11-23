@@ -68,9 +68,9 @@ elas aparecem com a aparência do WhatsApp.
 Uma escala publicada não é gerada de novo. A partir da publicação, toda mudança é uma substituição ou um ajuste
 feito à mão no app.
 
-Em cada semana da escala, a louvadeira pede confirmação sete dias antes do primeiro culto. Dois dias antes de cada
-culto, publica a escala dele no grupo do ministério, marcando quem serve. No rodízio por semana, uma única enquete
-cobre todos os cultos da semana.
+Em cada semana da escala, a louvadeira pede confirmação a cada pessoa sete dias antes do primeiro culto dela na
+semana. Dois dias antes de cada culto, publica a escala dele no grupo do ministério, marcando quem serve. No rodízio
+por semana, uma única enquete cobre todos os cultos da pessoa na semana.
 [Mensagens e prazos](mensagens.md) traz a lista completa, com horários e destinatários.
 
 <p>

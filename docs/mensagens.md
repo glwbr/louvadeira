@@ -37,7 +37,7 @@ novo a cada verificação até o fim do mês.
 
 | Quando | Para quem | Mensagem |
 | --- | --- | --- |
-| 7 dias antes do primeiro culto da semana, a partir das 18h | Cada escalado que ainda não confirmou | Enquete de confirmação |
+| 7 dias antes do primeiro culto da pessoa na semana, a partir das 18h | Cada escalado que ainda não confirmou | Enquete de confirmação |
 | 2 dias antes do culto, a partir das 18h | Grupo do ministério, marcando quem serve | A escala do culto: quem serve em cada função e as funções sem ninguém |
 | 2 dias antes do culto, a partir das 18h, em ministério sem grupo | Cada escalado que não avisou ausência | "Você está na escala", com a função |
 | A partir de 3 dias antes do culto, depois das 9h | Cada líder | "Falta responder", com os nomes de quem recebeu a enquete há mais de 24 horas e não respondeu |
