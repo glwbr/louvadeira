@@ -408,8 +408,9 @@ func parseReply(text string) (yes bool, ok bool) {
 }
 
 /**
- * NOTE: Applies a typed yes or no to the person's latest weekly confirmation or invitation to cover, when the answer
- * is unambiguous; otherwise it points them to the poll. Reports whether the text was taken as a reply.
+ * NOTE: Applies a typed yes or no to the person's latest poll, when the answer is unambiguous; otherwise it points
+ * them to the poll. Only the latest counts: a "sim" right after the bot asked something answers that question, never
+ * an older one. Reports whether the text was taken as a reply.
  */
 func (b *Bot) answerByText(ctx context.Context, person store.Person, yes bool) bool {
 	polls, err := b.Store.PersonRecentPolls(ctx, person.ID, b.now().Add(-replyWindow))
@@ -417,17 +418,37 @@ func (b *Bot) answerByText(ctx context.Context, person store.Person, yes bool) b
 		b.Log.Error("buscar enquetes recentes", "erro", err)
 		return false
 	}
-	for _, poll := range polls {
-		switch {
-		case poll.Kind == store.PollCover:
-			b.answerCoverByText(ctx, person, poll, yes)
-			return true
-		case hasAction(poll.Options, actionConfirm):
-			b.answerConfirmByText(ctx, person, poll, yes)
-			return true
+	if len(polls) == 0 {
+		return false
+	}
+	poll := polls[0]
+	switch {
+	case poll.Kind == store.PollCover:
+		b.answerCoverByText(ctx, person, poll, yes)
+	case isChatPoll(poll.Options):
+		b.answerChatByText(ctx, person, poll, yes)
+	case hasAction(poll.Options, actionConfirm):
+		b.answerConfirmByText(ctx, person, poll, yes)
+	default:
+		b.send(ctx, person.Phone, answerInPollHint)
+	}
+	return true
+}
+
+/**
+ * NOTE: A question about one service or one period has a yes option and a keep option; a question with several
+ * services or days needs the ticks.
+ */
+func (b *Bot) answerChatByText(ctx context.Context, person store.Person, poll store.Poll, yes bool) {
+	if len(poll.Options) == 2 {
+		for _, o := range poll.Options {
+			if (o.Action == actionKeep) != yes {
+				b.answerChatPoll(ctx, person, messenger.MessageID(poll.MessageID), []store.PollOption{o})
+				return
+			}
 		}
 	}
-	return false
+	b.send(ctx, person.Phone, pickInPollHint(false))
 }
 
 func (b *Bot) answerConfirmByText(ctx context.Context, person store.Person, poll store.Poll, yes bool) {

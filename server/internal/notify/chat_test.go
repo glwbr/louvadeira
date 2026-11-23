@@ -203,3 +203,19 @@ func TestScheduleOnlyShowsPendingInsideTheConfirmationWeek(t *testing.T) {
 		t.Fatalf("schedule = %+v", reply)
 	}
 }
+
+func TestATypedYesAnswersTheLatestQuestionNotAnOlderPoll(t *testing.T) {
+	w := newWorld(t)
+	w.bot.Tick(context.Background())
+	bassist := w.slotOf("2026-11-19", "Baixo").PersonName
+	w.says(bassist, "não posso dia 19")
+	w.fake.reset()
+
+	w.says(bassist, "sim")
+	if containsText(w.fake.to(w.phone(bassist)), "Confirmado") {
+		t.Fatal("the yes confirmed the week instead of answering the absence question")
+	}
+	if slot := w.slotOf("2026-11-19", "Baixo"); slot.Status != store.AssignmentDeclined {
+		t.Fatalf("slot = %+v, want declined after saying yes to the absence", slot)
+	}
+}

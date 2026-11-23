@@ -82,7 +82,7 @@ receber conversas comuns, que ficam sem resposta e sem registro.
 | `não posso`, sem dia | Vale como resposta a uma enquete recebida nas últimas 48 horas. Sem enquete recente, pergunta em qual culto a pessoa não vai |
 | `não posso dia 19`, `não posso 19/11`, `não posso domingo`, `não posso amanhã` | Confirma por enquete e registra a ausência naquele dia |
 | `não posso de 10/12 a 20/12`, `não posso até 20/12` | Confirma por enquete e registra a ausência no período |
-| `sim`, `não` e respostas curtas como `vou`, `confirmo` ou `não vou`, até 48 horas depois de uma enquete | Vale como resposta à última confirmação ou ao último convite para substituir |
+| `sim`, `não` e respostas curtas como `vou`, `confirmo` ou `não vou`, até 48 horas depois de uma enquete | Vale como resposta à última enquete recebida, quando ela é de sim ou não. Se a última enquete tem várias escolhas, o bot pede para marcar na enquete |
 
 O bot também entende `não vou poder`, `não vou conseguir` e `não consigo` no lugar de `não posso`. Acentos e
 maiúsculas não fazem diferença. Uma data sem ano, ou um dia sem mês, significa a próxima vez que aquele dia chega.

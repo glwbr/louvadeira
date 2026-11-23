@@ -365,6 +365,8 @@ func alreadyToldReply() string {
 	return "Eu já tinha avisado a liderança 🙂 Se mudou de ideia, fala com a liderança."
 }
 
+const answerInPollHint = "🙂 É só responder na enquete que eu mandei."
+
 func pickInPollHint(accepting bool) string {
 	if accepting {
 		return "🙂 Para dizer em quais cultos você consegue, é só marcar na enquete que eu mandei."
