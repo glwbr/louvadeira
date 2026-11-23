@@ -39,43 +39,49 @@ func nextMonth(now time.Time) string {
 
 /**
  * NOTE: Runs the monthly round for every ministry whose next month is not published yet. Each step is remembered,
- * so a restart or a late start only catches up on what is missing.
+ * so a restart or a late start only catches up on what is missing. A round still open when its month arrives, because
+ * the server was down or nobody approved it, carries on into that month.
  */
 func (b *Bot) availabilityRound(ctx context.Context, now time.Time) {
-	month := nextMonth(now)
 	ministries, err := b.Store.ListMinistries(ctx)
 	if err != nil {
 		b.Log.Error("listar ministérios", "erro", err)
 		return
 	}
+	thisMonth := now.Format("2006-01")
 	for _, m := range ministries {
-		status, err := b.Store.ScheduleStatus(ctx, m.ID, month)
-		if err != nil || status == "published" {
-			continue
+		b.runRound(ctx, m.ID, thisMonth, now, false)
+		b.runRound(ctx, m.ID, nextMonth(now), now, now.Day() >= availabilityDay)
+	}
+}
+
+func (b *Bot) runRound(ctx context.Context, ministryID int64, month string, now time.Time, canStart bool) {
+	status, err := b.Store.ScheduleStatus(ctx, ministryID, month)
+	if err != nil || status == "published" {
+		return
+	}
+	started, ok := b.Store.NotifiedAt(ctx, roundKey(ministryID, month))
+	if !ok {
+		if !canStart {
+			return
 		}
-		started, ok := b.Store.NotifiedAt(ctx, roundKey(m.ID, month))
-		if !ok {
-			if now.Day() < availabilityDay {
-				continue
-			}
-			if _, err := b.Store.MarkNotified(ctx, roundKey(m.ID, month), now); err != nil {
-				continue
-			}
-			started = now
+		if _, err := b.Store.MarkNotified(ctx, roundKey(ministryID, month), now); err != nil {
+			return
 		}
-		ministry, err := b.Store.Ministry(ctx, m.ID)
-		if err != nil {
-			continue
-		}
-		if now.Sub(started) < proposeAfter {
-			b.askAvailability(ctx, ministry, month)
-		}
-		if now.Sub(started) >= remindAfter {
-			b.remindAvailability(ctx, ministry, month)
-		}
-		if now.Sub(started) >= proposeAfter {
-			b.proposeSchedule(ctx, ministry, month, status)
-		}
+		started = now
+	}
+	ministry, err := b.Store.Ministry(ctx, ministryID)
+	if err != nil {
+		return
+	}
+	if now.Sub(started) < proposeAfter {
+		b.askAvailability(ctx, ministry, month)
+	}
+	if now.Sub(started) >= remindAfter {
+		b.remindAvailability(ctx, ministry, month)
+	}
+	if now.Sub(started) >= proposeAfter {
+		b.proposeSchedule(ctx, ministry, month, status)
 	}
 }
 

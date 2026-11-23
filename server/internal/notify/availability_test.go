@@ -102,3 +102,24 @@ func TestMonthlyRoundAsksRemindsAndProposesTheSchedule(t *testing.T) {
 		t.Fatalf("the round ran again after publishing: %+v", w.fake.sent)
 	}
 }
+
+func TestARoundTheTurnOfTheMonthCutShortStillProposesTheSchedule(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	w.clock = time.Date(2026, 11, 30, 10, 0, 0, 0, saoPaulo)
+	w.bot.Tick(ctx)
+	availabilityPoll(t, w, "Ana")
+
+	w.fake.reset()
+	w.clock = time.Date(2026, 12, 3, 10, 0, 0, 0, saoPaulo)
+	w.bot.Tick(ctx)
+	if status, _ := w.store.ScheduleStatus(ctx, w.ministry.ID, "2026-12"); status != "draft" {
+		t.Fatalf("december = %q, want a draft", status)
+	}
+	if !containsText(w.fake.to(w.phone("Líder")), "Escala de dezembro do Louvor pronta") {
+		t.Fatal("the leader got no proposal for december")
+	}
+	if containsText(w.fake.sent, "Escala de janeiro") {
+		t.Fatal("asked about january before day 20")
+	}
+}
