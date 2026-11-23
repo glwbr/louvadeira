@@ -59,7 +59,7 @@ func (b *Bot) AnnounceChange(ctx context.Context, change store.AssignmentChange,
 		}
 	}
 
-	if b.serviceTime(d).Sub(b.now()) > confirmAhead {
+	if b.now().Before(b.confirmOpens(d)) {
 		return
 	}
 	if _, asked := b.Store.NotifiedAt(ctx, confirmKey(d.MinistryID, d.PersonID, store.GroupKey(d))); asked {

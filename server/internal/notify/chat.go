@@ -174,7 +174,7 @@ func (b *Bot) sendSchedule(ctx context.Context, person store.Person) {
 	}
 	lines := make([]string, len(services))
 	for i, s := range services {
-		asking := b.serviceTime(store.AssignmentDetail{Date: s.date, StartTime: s.startTime}).Sub(b.now()) <= confirmAhead
+		asking := !b.now().Before(b.confirmOpens(store.AssignmentDetail{Date: s.date, StartTime: s.startTime}))
 		lines[i] = serviceLine(s, manyMinistries(services)) + s.state(asking)
 	}
 	b.send(ctx, person.Phone, scheduleText(lines))

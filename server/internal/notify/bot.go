@@ -17,7 +17,8 @@ import (
 )
 
 const (
-	confirmAhead   = 7 * 24 * time.Hour
+	confirmDays    = 7
+	confirmHour    = 18
 	pendingAhead   = 3 * 24 * time.Hour
 	answerTime     = 24 * time.Hour
 	lateNotice     = 72 * time.Hour
@@ -220,7 +221,7 @@ func (b *Bot) Tick(ctx context.Context) {
 	}
 	today := now.Format("2006-01-02")
 	// NOTE: Reads two weeks so a week that only starts inside the 7-day window is asked about as a whole.
-	upcoming, err := b.Store.UpcomingAssignments(ctx, today, now.Add(2*confirmAhead).Format("2006-01-02"))
+	upcoming, err := b.Store.UpcomingAssignments(ctx, today, now.AddDate(0, 0, 2*confirmDays).Format("2006-01-02"))
 	if err != nil {
 		b.Log.Error("buscar escalas", "erro", err)
 		return
@@ -287,7 +288,7 @@ func (b *Bot) sendConfirmations(ctx context.Context, upcoming []store.Assignment
 		for _, d := range slots {
 			pending = pending || d.Status == store.AssignmentScheduled
 		}
-		if !pending || !b.allows(slots[0].Phone) || b.serviceTime(slots[0]).Sub(now) > confirmAhead {
+		if !pending || !b.allows(slots[0].Phone) || now.Before(b.confirmOpens(slots[0])) {
 			continue
 		}
 		key := confirmKey(k.ministryID, k.personID, k.key)
@@ -301,6 +302,15 @@ func (b *Bot) sendConfirmations(ctx context.Context, upcoming []store.Assignment
 		asked = append(asked, slots[0].PersonName)
 	}
 	return asked
+}
+
+/**
+ * NOTE: A service is asked about from 18h of the same weekday a week before: people are off work by then, and a
+ * service at its own start time would find them already in church.
+ */
+func (b *Bot) confirmOpens(d store.AssignmentDetail) time.Time {
+	start := b.serviceTime(d)
+	return time.Date(start.Year(), start.Month(), start.Day()-confirmDays, confirmHour, 0, 0, 0, start.Location())
 }
 
 func confirmKey(ministryID, personID int64, group string) string {

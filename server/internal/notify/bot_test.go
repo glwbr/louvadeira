@@ -278,6 +278,30 @@ func TestTheConfirmationAsksPeopleToConfirmTheirPresence(t *testing.T) {
 	}
 }
 
+func TestConfirmationsOpenAt18hTheSameWeekdayAWeekBefore(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	bassist := w.slotOf("2026-11-26", "Baixo").PersonName
+	asked := func() bool {
+		for _, m := range w.fake.to(w.phone(bassist)) {
+			if m.options != nil && strings.Contains(m.text, "26/11") {
+				return true
+			}
+		}
+		return false
+	}
+	w.clock = time.Date(2026, 11, 19, 17, 55, 0, 0, saoPaulo)
+	w.bot.Tick(ctx)
+	if asked() {
+		t.Fatal("asked about 26/11 before 18h of 19/11")
+	}
+	w.clock = time.Date(2026, 11, 19, 18, 0, 0, 0, saoPaulo)
+	w.bot.Tick(ctx)
+	if !asked() {
+		t.Fatalf("no poll about 26/11 at 18h of 19/11: %+v", w.fake.to(w.phone(bassist)))
+	}
+}
+
 func TestQuietHoursSendNothing(t *testing.T) {
 	w := newWorld(t)
 	w.clock = time.Date(2026, 11, 13, 22, 0, 0, 0, saoPaulo)
