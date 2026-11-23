@@ -56,3 +56,18 @@ func TestAMessageCutShortByAPowerCutGoesOutAtTheNextStart(t *testing.T) {
 		t.Fatalf("sent %d polls after the start, want only the one cut short", len(w.fake.sent))
 	}
 }
+
+func TestNothingScheduledGoesOutWhileTheClockIsUnsynced(t *testing.T) {
+	w := newWorld(t)
+	synced := false
+	w.bot.ClockSynced = func() bool { return synced }
+	w.bot.Tick(context.Background())
+	if len(w.fake.sent) != 0 {
+		t.Fatalf("sent %d messages with the clock unsynced", len(w.fake.sent))
+	}
+	synced = true
+	w.bot.Tick(context.Background())
+	if len(w.fake.sent) != 10 {
+		t.Fatalf("sent %d polls once synced, want 10", len(w.fake.sent))
+	}
+}

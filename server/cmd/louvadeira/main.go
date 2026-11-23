@@ -13,6 +13,7 @@ import (
 	"time"
 	_ "time/tzdata"
 
+	"louvadeira/internal/clock"
 	"louvadeira/internal/config"
 	"louvadeira/internal/httpserver"
 	"louvadeira/internal/messenger"
@@ -82,7 +83,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	} else if n > 0 {
 		log.Warn("mensagens interrompidas na última parada; vão sair de novo", "quantas", n)
 	}
-	bot := &notify.Bot{Store: registry, Log: log, Location: location, Settle: 20 * time.Second}
+	bot := &notify.Bot{Store: registry, Log: log, Location: location, Settle: 20 * time.Second, ClockSynced: clock.Synced}
 	deps := httpserver.Deps{
 		Log:          log,
 		UI:           webui.FS(),

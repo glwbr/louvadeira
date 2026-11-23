@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"louvadeira/internal/messenger"
@@ -49,6 +50,11 @@ type Bot struct {
 	// NOTE: Async runs a batch of messages in the background, so a request from the app does not wait out the pauses
 	// between messages. When nil the batch runs inline.
 	Async func(task func())
+	// NOTE: ClockSynced tells whether the system clock can be trusted; nil trusts it. A board without a clock battery
+	// boots at a stale time, and a scheduled message sent then goes out at the wrong hour.
+	ClockSynced func() bool
+
+	clockWarned atomic.Bool
 
 	mu      sync.Mutex
 	pending map[pendingKey]*time.Timer
@@ -265,6 +271,13 @@ func (b *Bot) person(ctx context.Context, id int64) (store.Person, bool) {
  * people outside the allowlist without recording them, so they still get the message once the app goes live.
  */
 func (b *Bot) Tick(ctx context.Context) {
+	if b.ClockSynced != nil && !b.ClockSynced() {
+		if !b.clockWarned.Swap(true) {
+			b.Log.Warn("relógio sem sincronizar; as mensagens agendadas esperam")
+		}
+		return
+	}
+	b.clockWarned.Store(false)
 	now := b.now()
 	if now.Hour() < firstHour || now.Hour() >= lastHour {
 		return
