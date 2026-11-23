@@ -83,6 +83,9 @@ func (b *Bot) askAboutGaps(ctx context.Context, gaps []store.ServiceGap) int {
  * nobody keeps looking for someone.
  */
 func (b *Bot) answerGap(ctx context.Context, leader store.Person, pollID messenger.MessageID, option store.PollOption) {
+	if b.started(option.Date, option.Time) {
+		return
+	}
 	if first, err := b.Store.MarkNotified(ctx, fmt.Sprintf("gap-answer:%s:%s", pollID, option.Action), b.now()); err != nil || !first {
 		return
 	}
@@ -160,7 +163,7 @@ func (b *Bot) sendGroupPoll(ctx context.Context, group, question string, options
  * the group poll belongs to nobody.
  */
 func (b *Bot) answerGroupCall(ctx context.Context, vote messenger.Vote, option store.PollOption) {
-	if vote.FromMe || option.Action != actionGapTake {
+	if vote.FromMe || option.Action != actionGapTake || b.started(option.Date, option.Time) {
 		return
 	}
 	volunteer, err := b.Store.PersonByPhone(ctx, string(vote.From))

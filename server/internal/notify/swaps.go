@@ -124,6 +124,9 @@ func (b *Bot) openSwap(ctx context.Context, assignmentID int64) (*swap, error) {
 	if err != nil {
 		return nil, err
 	}
+	if b.started(d.Date, d.StartTime) {
+		return nil, store.ValidationError{Message: "esse culto já aconteceu"}
+	}
 	late := b.serviceTime(d).Sub(b.now()) < lateNotice
 	request, err := b.Store.OpenCoverRequest(ctx, assignmentID, late, b.now())
 	if err != nil {
@@ -446,17 +449,29 @@ func (b *Bot) answerCover(ctx context.Context, person store.Person, options, cho
 	var accepts [][]int64
 	var refusals []int64
 	for _, o := range options {
+		ids := b.upcomingRequests(ctx, requestsOf(o))
 		switch {
+		case len(ids) == 0:
 		case o.Action == actionAccept && picked[o.Label]:
-			accepts = append(accepts, requestsOf(o))
+			accepts = append(accepts, ids)
 		case o.Action == actionAccept && slots > 1:
-			refusals = append(refusals, requestsOf(o)...)
+			refusals = append(refusals, ids...)
 		case o.Action == actionRefuse && picked[o.Label]:
-			refusals = append(refusals, requestsOf(o)...)
+			refusals = append(refusals, ids...)
 		}
 	}
 	b.acceptCovers(ctx, person, accepts)
 	b.refuseCovers(ctx, person, refusals, len(accepts) == 0)
+}
+
+func (b *Bot) upcomingRequests(ctx context.Context, requestIDs []int64) []int64 {
+	var ids []int64
+	for _, id := range requestIDs {
+		if r, err := b.Store.CoverRequestResult(ctx, id); err == nil && !b.started(r.Assignment.Date, r.Assignment.StartTime) {
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }
 
 func requestsOf(o store.PollOption) []int64 {

@@ -331,7 +331,7 @@ func (b *Bot) declineOwn(ctx context.Context, person store.Person, assignmentIDs
 	var ids []int64
 	for _, id := range assignmentIDs {
 		d, err := b.Store.AssignmentDetail(ctx, id)
-		if err != nil || d.PersonID != person.ID || d.Status == store.AssignmentDeclined {
+		if err != nil || d.PersonID != person.ID || d.Status == store.AssignmentDeclined || b.started(d.Date, d.StartTime) {
 			continue
 		}
 		ids = append(ids, id)

@@ -67,6 +67,9 @@ As opções da enquete de confirmação dependem de quantos cultos ela cobre:
 Um convite que não pôde ser enviado é tentado de novo a cada verificação, das 8h às 21h, por até 24 horas. Depois
 disso, os líderes recebem o pedido de ajuda.
 
+Uma resposta a enquete que chega ao servidor depois que o culto começou, porque ele estava fora do ar, não muda a
+escala desse culto e não gera mensagens.
+
 ## Comandos no privado
 
 O bot responde a integrantes cadastrados, quando a mensagem é um dos comandos abaixo. O número pode continuar a

@@ -84,6 +84,24 @@ func (b *Bot) serviceTime(d store.AssignmentDetail) time.Time {
 	return b.at(d.Date, d.StartTime)
 }
 
+/**
+ * NOTE: An answer can reach the server long after it was given, when the server was off. By then the service may have
+ * happened, and calling substitutes or announcing a change for it would only confuse people.
+ */
+func (b *Bot) started(date, startTime string) bool {
+	return !b.at(date, startTime).After(b.now())
+}
+
+func (b *Bot) upcomingSlots(ctx context.Context, assignmentIDs []int64) []int64 {
+	var ids []int64
+	for _, id := range assignmentIDs {
+		if d, err := b.Store.AssignmentDetail(ctx, id); err == nil && !b.started(d.Date, d.StartTime) {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
 func (b *Bot) at(date, startTime string) time.Time {
 	loc := b.Location
 	if loc == nil {
@@ -534,6 +552,9 @@ func (b *Bot) applyVote(ctx context.Context, vote messenger.Vote) {
 }
 
 func (b *Bot) confirm(ctx context.Context, person store.Person, assignments []int64, reply bool) {
+	if assignments = b.upcomingSlots(ctx, assignments); len(assignments) == 0 {
+		return
+	}
 	changed, err := b.Store.SetAssignmentsStatus(ctx, person.ID, assignments, store.AssignmentConfirmed, b.now())
 	if err != nil {
 		b.Log.Error("confirmar presença", "erro", err)
