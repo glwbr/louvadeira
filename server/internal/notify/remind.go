@@ -59,7 +59,7 @@ func (b *Bot) remindInPrivate(ctx context.Context, upcoming []store.AssignmentDe
 			roles[i] = slot.RoleName
 		}
 		b.once(ctx, fmt.Sprintf("remind:%d:%s:%d", k.person, k.date, k.service), func(ctx context.Context) bool {
-			return b.send(ctx, d.Phone, reminderText(d, roles))
+			return b.sendNow(ctx, d.Phone, reminderText(d, roles))
 		})
 	}
 }
@@ -85,7 +85,7 @@ func (b *Bot) remindGroups(ctx context.Context, now time.Time) {
 			}
 			text, marked := lineupText(ministry, sv)
 			b.once(ctx, fmt.Sprintf("lineup:%d:%s:%d", m.ID, sv.Date, sv.ServiceID), func(ctx context.Context) bool {
-				return b.mention(ctx, m.WhatsAppGroup, text, marked...)
+				return b.mentionNow(ctx, m.WhatsAppGroup, text, marked...)
 			})
 		}
 	}

@@ -36,7 +36,7 @@ func (b *Bot) SendLoginLink(ctx context.Context, person store.Person, link strin
 	if _, err := b.Store.MarkNotified(ctx, key, b.now()); err != nil {
 		return err
 	}
-	if !b.send(ctx, person.Phone, loginLinkText(person.Name, link)) {
+	if !b.sendNow(ctx, person.Phone, loginLinkText(person.Name, link)) {
 		_ = b.Store.UnmarkNotified(ctx, key)
 		return errors.New("não consegui enviar a mensagem no WhatsApp")
 	}

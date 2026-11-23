@@ -58,6 +58,7 @@ type Bot struct {
 
 	mu      sync.Mutex
 	pending map[pendingKey]*time.Timer
+	outbox  sync.Mutex
 }
 
 // NOTE: A vote waits per poll and voter: in a group poll, one person's answer never replaces another's.
@@ -125,7 +126,100 @@ func (b *Bot) at(date, startTime string) time.Time {
 	return t
 }
 
+// NOTE: messageLifetime bounds how late a queued message may still go out; past it, the news is stale.
+const messageLifetime = 12 * time.Hour
+
+// NOTE: Sent messages are kept this long as a record of what the bot said.
+const outboxKeepDays = 60
+
+/**
+ * NOTE: send and mention queue a message about something already saved and try to deliver it right away; see post.
+ * A scheduled message, whose record already drives its retries, goes through sendNow and mentionNow instead.
+ */
 func (b *Bot) send(ctx context.Context, to string, text string) bool {
+	return b.post(ctx, to, store.MessageText, text, nil)
+}
+
+func (b *Bot) mention(ctx context.Context, group string, text string, people ...store.Person) bool {
+	return b.post(ctx, group, store.MessageMention, text, phonesOf(people))
+}
+
+/**
+ * INVARIANT: post records the message before sending it, so a dropped connection or a restart right after a change
+ * does not lose the news: each tick tries the pending ones again, in order per recipient, until they go out or turn
+ * messageLifetime old. A message WhatsApp may already have is not sent again. Reports whether it was queued.
+ */
+func (b *Bot) post(ctx context.Context, to, kind, text string, mentioned []string) bool {
+	if to == "" || b.Messenger == nil {
+		return false
+	}
+	now := b.now()
+	message := store.OutboxMessage{Recipient: to, Kind: kind, Text: text, Mentions: mentioned, CreatedAt: now, ExpiresAt: now.Add(messageLifetime)}
+	if _, err := b.Store.EnqueueMessage(ctx, message); err != nil {
+		b.Log.Error("guardar mensagem", "erro", err)
+		return false
+	}
+	b.flushOutbox(ctx, to)
+	return true
+}
+
+/**
+ * NOTE: Sends what is pending for one recipient, or for everyone when empty. A recipient whose send fails is left
+ * for the next tick, so their later messages never overtake the one that failed.
+ */
+func (b *Bot) flushOutbox(ctx context.Context, recipient string) {
+	ctx = context.WithoutCancel(ctx)
+	b.outbox.Lock()
+	defer b.outbox.Unlock()
+	pending, err := b.Store.PendingMessages(ctx, recipient)
+	if err != nil {
+		b.Log.Error("ler mensagens pendentes", "erro", err)
+		return
+	}
+	stuck := map[string]bool{}
+	for _, m := range pending {
+		if stuck[m.Recipient] {
+			continue
+		}
+		if !b.now().Before(m.ExpiresAt) {
+			b.Log.Warn("mensagem antiga demais; não vou mais enviar", "para", "…"+tail(m.Recipient), "criada", m.CreatedAt)
+			_ = b.Store.MessageDropped(ctx, m.ID)
+			continue
+		}
+		var err error
+		if m.Kind == store.MessageMention {
+			marked := make([]messenger.Address, len(m.Mentions))
+			for i, p := range m.Mentions {
+				marked[i] = messenger.Address(p)
+			}
+			_, err = b.Messenger.SendMention(ctx, messenger.Address(m.Recipient), m.Text, marked)
+		} else {
+			_, err = b.Messenger.SendText(ctx, messenger.Address(m.Recipient), m.Text)
+		}
+		switch {
+		case errors.Is(err, messenger.ErrNotAllowed):
+			b.logSendError(m.Recipient, err)
+			_ = b.Store.MessageDropped(ctx, m.ID)
+		case b.delivered(m.Recipient, err):
+			_ = b.Store.MessageSent(ctx, m.ID, b.now())
+		default:
+			_ = b.Store.MessageFailed(ctx, m.ID)
+			stuck[m.Recipient] = true
+		}
+	}
+}
+
+func phonesOf(people []store.Person) []string {
+	var phones []string
+	for _, p := range people {
+		if p.Phone != "" {
+			phones = append(phones, p.Phone)
+		}
+	}
+	return phones
+}
+
+func (b *Bot) sendNow(ctx context.Context, to string, text string) bool {
 	if to == "" || b.Messenger == nil {
 		return false
 	}
@@ -177,15 +271,13 @@ func (b *Bot) delivered(to string, err error) bool {
  * NOTE: mention posts to a group marking people, so they are notified even with the group muted. People without a
  * phone are written by name and not marked.
  */
-func (b *Bot) mention(ctx context.Context, group string, text string, people ...store.Person) bool {
-	if b.Messenger == nil {
+func (b *Bot) mentionNow(ctx context.Context, group string, text string, people ...store.Person) bool {
+	if group == "" || b.Messenger == nil {
 		return false
 	}
 	var marked []messenger.Address
-	for _, p := range people {
-		if p.Phone != "" {
-			marked = append(marked, messenger.Address(p.Phone))
-		}
+	for _, p := range phonesOf(people) {
+		marked = append(marked, messenger.Address(p))
 	}
 	_, err := b.Messenger.SendMention(ctx, messenger.Address(group), text, marked)
 	return b.delivered(group, err)
@@ -295,6 +387,8 @@ func (b *Bot) Tick(ctx context.Context) {
 			future = append(future, d)
 		}
 	}
+	b.flushOutbox(ctx, "")
+	_ = b.Store.PruneOutbox(ctx, now.AddDate(0, 0, -outboxKeepDays))
 	b.retryInvites(ctx)
 	b.retryAnnouncements(ctx, now)
 	b.sendConfirmations(ctx, future, now)
@@ -446,7 +540,7 @@ func (b *Bot) alertPending(ctx context.Context, upcoming []store.AssignmentDetai
 	for _, k := range order {
 		text := pendingAlert(sample[k], pending[k])
 		b.alertEachLeader(ctx, k.ministry, fmt.Sprintf("pending:%d:%s:%d", k.ministry, k.date, k.service), func(ctx context.Context, leader store.Person) bool {
-			return b.send(ctx, leader.Phone, text)
+			return b.sendNow(ctx, leader.Phone, text)
 		})
 	}
 }
@@ -717,7 +811,7 @@ func (b *Bot) announce(ctx context.Context, ministryID int64, month string) anno
 			return false
 		}
 		text, marked := summarize(ministry, view, true)
-		return b.mention(ctx, ministry.WhatsAppGroup, text, marked...)
+		return b.mentionNow(ctx, ministry.WhatsAppGroup, text, marked...)
 	})
 	retry := "announce-retry:" + key
 	if _, done := b.Store.NotifiedAt(ctx, key); done {

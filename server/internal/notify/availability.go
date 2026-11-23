@@ -153,7 +153,7 @@ func (b *Bot) remindAvailability(ctx context.Context, ministry store.MinistryDet
 			continue
 		}
 		b.once(ctx, fmt.Sprintf("availability-remind:%d:%d:%s", ministry.ID, member.PersonID, month), func(ctx context.Context) bool {
-			return b.send(ctx, member.Phone, availabilityReminder(member.Name, month))
+			return b.sendNow(ctx, member.Phone, availabilityReminder(member.Name, month))
 		})
 	}
 }
@@ -191,7 +191,7 @@ func (b *Bot) proposeSchedule(ctx context.Context, ministry store.MinistryDetail
 		summary := fmt.Sprintf("%s:%d:summary", built, leader.ID)
 		b.once(ctx, summary, func(ctx context.Context) bool {
 			text, ok := b.proposalText(ctx, ministry, month)
-			return ok && b.send(ctx, leader.Phone, text)
+			return ok && b.sendNow(ctx, leader.Phone, text)
 		})
 		if _, sent := b.Store.NotifiedAt(ctx, summary); !sent {
 			continue

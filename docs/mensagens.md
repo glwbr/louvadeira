@@ -17,6 +17,11 @@ no código, em `server/internal/notify/`, e valem para todos os ministérios.
 Cada mensagem agendada sai uma vez. Depois de uma parada, o servidor envia o que ficou para trás e não repete o que
 já foi enviado. Uma mensagem interrompida no meio do envio, por um reinício ou uma queda de energia, sai de novo.
 
+As respostas e os avisos sobre uma mudança já feita, como a confirmação de uma troca, a "Mudança na escala" no grupo
+ou o aviso aos líderes, ficam guardados antes de sair. Se o WhatsApp cai ou o servidor reinicia antes do envio, cada
+verificação tenta de novo, na ordem em que foram escritos para cada pessoa, por até 12 horas. Esse registro também
+mostra o que o bot mandou nos últimos 60 dias.
+
 ## Rodada do mês
 
 A rodada trata da escala do mês seguinte e roda para cada ministério que ainda não tem esse mês publicado.
