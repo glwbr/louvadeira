@@ -159,32 +159,23 @@ func (b *Bot) remindAvailability(ctx context.Context, ministry store.MinistryDet
 }
 
 /**
- * NOTE: Builds the draft once, unless the leaders already started one in the app, and asks them to approve it. A
- * draft they started is kept as it is, so their edits are never thrown away.
+ * NOTE: Builds the draft once, unless the leaders already started one in the app, and asks each leader to approve it
+ * until they got it. A draft they started is kept as it is, so their edits are never thrown away. The summary goes
+ * before the poll, so a leader never gets the question without the schedule it is about.
  */
 func (b *Bot) proposeSchedule(ctx context.Context, ministry store.MinistryDetail, month, status string) {
-	key := fmt.Sprintf("availability-draft:%d:%s", ministry.ID, month)
-	if first, err := b.Store.MarkNotified(ctx, key, b.now()); err != nil || !first {
+	built := fmt.Sprintf("availability-draft:%d:%s", ministry.ID, month)
+	first, err := b.Store.MarkNotified(ctx, built, b.now())
+	if err != nil {
 		return
 	}
 	if status == "" {
+		if !first {
+			return
+		}
 		if err := b.Store.GenerateDraft(ctx, ministry.ID, month, b.now()); err != nil {
 			b.tellLeaders(ctx, ministry.ID, draftFailedAlert(ministry.Name, month, err))
 			return
-		}
-	}
-	view, err := b.Store.ScheduleView(ctx, ministry.ID, month)
-	if err != nil {
-		b.Log.Error("ler escala proposta", "erro", err)
-		return
-	}
-	asked, answered := 0, 0
-	for _, member := range ministry.Members {
-		if _, ok := b.Store.NotifiedAt(ctx, askedKey(ministry.ID, member.PersonID, month)); ok {
-			asked++
-		}
-		if _, ok := b.Store.NotifiedAt(ctx, answeredKey(ministry.ID, member.PersonID, month)); ok {
-			answered++
 		}
 	}
 	leaders, err := b.Store.Leaders(ctx, ministry.ID)
@@ -197,9 +188,36 @@ func (b *Bot) proposeSchedule(ctx context.Context, ministry store.MinistryDetail
 		{Label: optionEdit, Action: actionEdit, Ministry: ministry.ID, Month: month},
 	}
 	for _, leader := range leaders {
-		b.send(ctx, leader.Phone, draftProposal(ministry.Name, month, Summary(ministry, view), answered, asked, view.Warnings))
-		b.sendPoll(ctx, store.PollConfirm, leader, approvalQuestion(month), options, false)
+		summary := fmt.Sprintf("%s:%d:summary", built, leader.ID)
+		b.once(ctx, summary, func(ctx context.Context) bool {
+			text, ok := b.proposalText(ctx, ministry, month)
+			return ok && b.send(ctx, leader.Phone, text)
+		})
+		if _, sent := b.Store.NotifiedAt(ctx, summary); !sent {
+			continue
+		}
+		b.once(ctx, fmt.Sprintf("%s:%d:poll", built, leader.ID), func(ctx context.Context) bool {
+			return b.sendPoll(ctx, store.PollConfirm, leader, approvalQuestion(month), options, false)
+		})
 	}
+}
+
+func (b *Bot) proposalText(ctx context.Context, ministry store.MinistryDetail, month string) (string, bool) {
+	view, err := b.Store.ScheduleView(ctx, ministry.ID, month)
+	if err != nil {
+		b.Log.Error("ler escala proposta", "erro", err)
+		return "", false
+	}
+	asked, answered := 0, 0
+	for _, member := range ministry.Members {
+		if _, ok := b.Store.NotifiedAt(ctx, askedKey(ministry.ID, member.PersonID, month)); ok {
+			asked++
+		}
+		if _, ok := b.Store.NotifiedAt(ctx, answeredKey(ministry.ID, member.PersonID, month)); ok {
+			answered++
+		}
+	}
+	return draftProposal(ministry.Name, month, Summary(ministry, view), answered, asked, view.Warnings), true
 }
 
 func (b *Bot) answerApproval(ctx context.Context, leader store.Person, pollID messenger.MessageID, option store.PollOption) {

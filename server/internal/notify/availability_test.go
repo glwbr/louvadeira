@@ -2,6 +2,7 @@ package notify_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -121,5 +122,46 @@ func TestARoundTheTurnOfTheMonthCutShortStillProposesTheSchedule(t *testing.T) {
 	}
 	if containsText(w.fake.sent, "Escala de janeiro") {
 		t.Fatal("asked about january before day 20")
+	}
+}
+
+func TestAProposalThatFailedToSendGoesOutOnTheNextTick(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	w.clock = time.Date(2026, 11, 20, 10, 0, 0, 0, saoPaulo)
+	w.bot.Tick(ctx)
+
+	leader := w.phone("Líder")
+	w.fake.reset()
+	w.fake.fail = func(m message) error {
+		if m.to == leader {
+			return errors.New("websocket EOF")
+		}
+		return nil
+	}
+	w.clock = time.Date(2026, 11, 23, 10, 0, 0, 0, saoPaulo)
+	w.bot.Tick(ctx)
+	if len(w.fake.to(leader)) != 0 {
+		t.Fatal("a send to the leader got through")
+	}
+
+	w.fake.fail = nil
+	w.clock = time.Date(2026, 11, 23, 10, 5, 0, 0, saoPaulo)
+	w.bot.Tick(ctx)
+	var proposal []string
+	for _, m := range w.fake.to(leader) {
+		if strings.Contains(m.text, "Escala de dezembro do Louvor pronta") || strings.Contains(m.text, "Posso publicar a escala de dezembro") {
+			proposal = append(proposal, m.text)
+		}
+	}
+	if len(proposal) != 2 || !strings.Contains(proposal[0], "pronta") {
+		t.Fatalf("leader got %q, want the summary and then the approval poll", proposal)
+	}
+
+	w.fake.reset()
+	w.clock = time.Date(2026, 11, 23, 10, 10, 0, 0, saoPaulo)
+	w.bot.Tick(ctx)
+	if len(w.fake.to(leader)) != 0 {
+		t.Fatal("the proposal went out twice")
 	}
 }
