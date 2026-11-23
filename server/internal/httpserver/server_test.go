@@ -367,6 +367,9 @@ func TestScheduleFlow(t *testing.T) {
 	if rec := h.do(http.MethodPost, base+"/2026-12/publish", ""); rec.Code != http.StatusNoContent {
 		t.Fatalf("publish: %d %s", rec.Code, rec.Body)
 	}
+	if rec := h.do(http.MethodPost, base+"/2026-12/publish", ""); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "já foi publicada") {
+		t.Fatalf("publish twice: %d %s", rec.Code, rec.Body)
+	}
 	rec = h.do(http.MethodPost, base+"/2026-12/generate", "")
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "publicada") {
 		t.Fatalf("regenerate published: %d %s", rec.Code, rec.Body)

@@ -372,10 +372,21 @@ func (s *Store) ScheduleStatus(ctx context.Context, ministryID int64, month stri
 	return status, err
 }
 
+/**
+ * NOTE: Publishes a draft. A month already published answers ErrPublished, as when a leader approves it on WhatsApp
+ * while another publishes it in the app; a month with no draft answers ErrNotFound.
+ */
 func (s *Store) PublishSchedule(ctx context.Context, ministryID int64, month string, now time.Time) error {
-	return requireAffected(s.db.ExecContext(ctx, `
+	err := requireAffected(s.db.ExecContext(ctx, `
 		UPDATE schedules SET status = 'published', published_at = ?
 		WHERE ministry_id = ? AND month = ? AND status = 'draft'`, formatTime(now), ministryID, month))
+	if !errors.Is(err, ErrNotFound) {
+		return err
+	}
+	if status, statusErr := s.ScheduleStatus(ctx, ministryID, month); statusErr == nil && status == StatusPublished {
+		return ErrPublished
+	}
+	return err
 }
 
 func (s *Store) ScheduleView(ctx context.Context, ministryID int64, month string) (ScheduleView, error) {

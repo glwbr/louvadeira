@@ -229,7 +229,7 @@ func (b *Bot) answerApproval(ctx context.Context, leader store.Person, pollID me
 		return
 	}
 	err := b.Store.PublishSchedule(ctx, option.Ministry, option.Month, b.now())
-	if errors.Is(err, store.ErrNotFound) {
+	if errors.Is(err, store.ErrPublished) || errors.Is(err, store.ErrNotFound) {
 		b.send(ctx, leader.Phone, alreadyPublishedReply(option.Month))
 		return
 	}

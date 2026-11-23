@@ -106,7 +106,7 @@ func TestPublishedSchedulesCannotBeRegeneratedAndFeedTheNextMonth(t *testing.T) 
 	if err := s.GenerateDraft(ctx, w.ministry.ID, "2026-12", generatedAt); !errors.Is(err, store.ErrPublished) {
 		t.Fatalf("regenerating a published schedule: err = %v", err)
 	}
-	if err := s.PublishSchedule(ctx, w.ministry.ID, "2026-12", generatedAt); !errors.Is(err, store.ErrNotFound) {
+	if err := s.PublishSchedule(ctx, w.ministry.ID, "2026-12", generatedAt); !errors.Is(err, store.ErrPublished) {
 		t.Fatalf("publishing twice: err = %v", err)
 	}
 
