@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -49,9 +50,12 @@ func (d Deps) requestLink(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusAccepted, accepted)
 		return
 	}
-	if err := d.sendLink(r, person); err != nil && !errors.Is(err, notify.ErrTooSoon) {
-		d.Log.Error("enviar link de acesso", "erro", err)
-	}
+	// NOTE: The link goes out after the answer, so a registered number is answered as fast as any other.
+	d.Bot.InBackground(r.Context(), func(ctx context.Context) {
+		if err := d.sendLink(ctx, person); err != nil && !errors.Is(err, notify.ErrTooSoon) {
+			d.Log.Error("enviar link de acesso", "erro", err)
+		}
+	})
 	writeJSON(w, http.StatusAccepted, accepted)
 }
 
@@ -69,7 +73,7 @@ func (d Deps) sendPersonLink(w http.ResponseWriter, r *http.Request) {
 		d.fail(w, err)
 		return
 	}
-	err = d.sendLink(r, person)
+	err = d.sendLink(r.Context(), person)
 	switch {
 	case errors.Is(err, notify.ErrTooSoon):
 		writeError(w, http.StatusTooManyRequests, err.Error())
@@ -80,13 +84,13 @@ func (d Deps) sendPersonLink(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (d Deps) sendLink(r *http.Request, person store.Person) error {
-	token, err := d.Store.CreateLoginToken(r.Context(), person.ID, d.now(), memberLinkTTL)
+func (d Deps) sendLink(ctx context.Context, person store.Person) error {
+	token, err := d.Store.CreateLoginToken(ctx, person.ID, d.now(), memberLinkTTL)
 	if err != nil {
 		return err
 	}
-	if err := d.Bot.SendLoginLink(r.Context(), person, d.PublicURL+"/entrar?token="+token); err != nil {
-		if discardErr := d.Store.DiscardLoginToken(r.Context(), token); discardErr != nil {
+	if err := d.Bot.SendLoginLink(ctx, person, d.PublicURL+"/entrar?token="+token); err != nil {
+		if discardErr := d.Store.DiscardLoginToken(ctx, token); discardErr != nil {
 			d.Log.Error("descartar link de acesso", "erro", discardErr)
 		}
 		return err

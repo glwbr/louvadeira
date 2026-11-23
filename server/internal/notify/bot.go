@@ -71,6 +71,14 @@ func (b *Bot) now() time.Time {
 	return t
 }
 
+/**
+ * NOTE: InBackground runs a task after the request that started it has been answered, on a context the request's end
+ * does not cancel.
+ */
+func (b *Bot) InBackground(ctx context.Context, task func(context.Context)) {
+	b.later(ctx, task)
+}
+
 func (b *Bot) later(ctx context.Context, task func(context.Context)) {
 	if b.Async == nil {
 		task(ctx)
