@@ -601,6 +601,33 @@ func (s *Store) AcceptCover(ctx context.Context, requestID, personID int64, now 
 /**
  * NOTE: Records a refusal and reports whether every invited person has now refused.
  */
+/**
+ * NOTE: OpenInvites lists the open swaps a person was invited to and never answered, in one ministry or, with
+ * ministryID 0, in all of them.
+ */
+func (s *Store) OpenInvites(ctx context.Context, personID, ministryID int64) ([]int64, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT ci.request_id FROM cover_invites ci
+		JOIN cover_requests cr ON cr.id = ci.request_id
+		JOIN assignments a ON a.id = cr.assignment_id
+		JOIN schedules sc ON sc.id = a.schedule_id
+		WHERE ci.person_id = ? AND ci.answer IS NULL AND cr.status = 'open' AND (? = 0 OR sc.ministry_id = ?)
+		ORDER BY ci.request_id`, personID, ministryID, ministryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 func (s *Store) RefuseCover(ctx context.Context, requestID, personID int64, now time.Time) (bool, error) {
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE cover_invites SET answer = 'no', answered_at = ?

@@ -177,3 +177,43 @@ func TestAnArchivedMinistryGetsNoMoreMessages(t *testing.T) {
 		t.Fatalf("asked %+v for an archived ministry", polls(w.fake.sent))
 	}
 }
+
+func TestSomeoneWhoLeftNoLongerHoldsASwapOrTheirSlots(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	slot := w.slotOf("2026-11-19", "Baixo")
+	bassist := slot.PersonName
+	other := map[string]string{"Edu": "Fred", "Fred": "Edu"}[bassist]
+	if _, err := w.bot.Decline(ctx, []int64{slot.AssignmentID}, false); err != nil {
+		t.Fatal(err)
+	}
+	w.fake.reset()
+
+	if err := w.store.ArchivePerson(ctx, w.people[other].ID); err != nil {
+		t.Fatal(err)
+	}
+	w.bot.PersonLeft(ctx, w.people[other].ID, 0)
+	if !containsText(w.fake.to(w.phone("Líder")), "Ninguém conseguiu substituir "+bassist) {
+		t.Fatalf("leader = %+v", w.fake.to(w.phone("Líder")))
+	}
+
+	w.fake.reset()
+	var voice store.ScheduleSlot
+	for _, v := range w.slotsOf("2026-11-22", "Voz") {
+		if v.PersonName != "Líder" {
+			voice = v
+		}
+	}
+	if err := w.store.RemoveMember(ctx, w.ministry.ID, voice.PersonID); err != nil {
+		t.Fatal(err)
+	}
+	w.bot.PersonLeft(ctx, voice.PersonID, w.ministry.ID)
+	for _, v := range w.slotsOf("2026-11-22", "Voz") {
+		if v.AssignmentID == voice.AssignmentID && (v.Status != store.AssignmentDeclined || !v.CoverOpen) {
+			t.Fatalf("%s's sunday = %+v, want a swap open", voice.PersonName, v)
+		}
+	}
+	if !containsText(w.fake.to(w.phone("Líder")), voice.PersonName+"* não vai poder servir no Louvor daqui para frente") {
+		t.Fatalf("leader = %+v", w.fake.to(w.phone("Líder")))
+	}
+}

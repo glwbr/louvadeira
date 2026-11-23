@@ -135,6 +135,9 @@ no app.
 Quem avisou que não ia pode voltar atrás enquanto ninguém tiver aceitado o lugar. Depois disso, a volta passa pela
 liderança.
 
+Quando um administrador arquiva um integrante, ou o tira da equipe, os cultos em que ele ainda estava escalado viram
+substituições do mesmo jeito. Os convites que ele não respondeu contam como recusa.
+
 O motivo de uma ausência (viagem, trabalho, saúde, família, estudos ou outro) aparece só para os administradores e
 para a liderança.
 

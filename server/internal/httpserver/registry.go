@@ -39,7 +39,11 @@ func (d Deps) archivePerson(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "você não pode arquivar a si mesmo")
 		return
 	}
-	d.respond(w, http.StatusNoContent, nil, d.Store.ArchivePerson(r.Context(), id))
+	err := d.Store.ArchivePerson(r.Context(), id)
+	if err == nil && d.Bot != nil {
+		d.Bot.PersonLeft(r.Context(), id, 0)
+	}
+	d.respond(w, http.StatusNoContent, nil, err)
 }
 
 func (d Deps) listServices(w http.ResponseWriter, r *http.Request) {
@@ -164,7 +168,11 @@ func (d Deps) removeMember(w http.ResponseWriter, r *http.Request) {
 	if !ok || !okPerson {
 		return
 	}
-	d.respond(w, http.StatusNoContent, nil, d.Store.RemoveMember(r.Context(), id, personID))
+	err := d.Store.RemoveMember(r.Context(), id, personID)
+	if err == nil && d.Bot != nil {
+		d.Bot.PersonLeft(r.Context(), personID, id)
+	}
+	d.respond(w, http.StatusNoContent, nil, err)
 }
 
 type ministryServicesRequest struct {

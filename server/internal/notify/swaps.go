@@ -144,6 +144,38 @@ func (b *Bot) plannedGuests(ctx context.Context, s *swap) []store.CoverGuest {
 	return guests
 }
 
+/**
+ * NOTE: PersonLeft settles what someone who left a ministry (or, with ministryID 0, every ministry) still held there.
+ * Each upcoming slot gets a swap, as when an admin declines it, and each invitation they never answered counts as a
+ * no, so a swap waiting only on them ends and the leaders hear nobody could cover.
+ */
+func (b *Bot) PersonLeft(ctx context.Context, personID, ministryID int64) {
+	b.later(ctx, func(ctx context.Context) {
+		if invites, err := b.Store.OpenInvites(ctx, personID, ministryID); err != nil {
+			b.Log.Error("buscar convites de quem saiu", "erro", err)
+		} else {
+			b.refuseCovers(ctx, store.Person{ID: personID}, invites, false)
+		}
+		slots, err := b.Store.PersonAssignments(ctx, personID, b.Today(), b.now().AddDate(1, 0, 0).Format("2006-01-02"))
+		if err != nil {
+			b.Log.Error("buscar escalas de quem saiu", "erro", err)
+			return
+		}
+		var ids []int64
+		for _, d := range slots {
+			if (ministryID == 0 || d.MinistryID == ministryID) && !b.started(d.Date, d.StartTime) {
+				ids = append(ids, d.AssignmentID)
+			}
+		}
+		if len(ids) == 0 {
+			return
+		}
+		if _, err := b.decline(ctx, ids, false, absence{period: "daqui para frente"}); err != nil {
+			b.Log.Error("abrir trocas de quem saiu", "erro", err)
+		}
+	})
+}
+
 func (b *Bot) openSwap(ctx context.Context, assignmentID int64) (*swap, error) {
 	d, err := b.Store.AssignmentDetail(ctx, assignmentID)
 	if err != nil {
