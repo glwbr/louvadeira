@@ -160,12 +160,24 @@ func (s *Store) UpdateMinistry(ctx context.Context, id int64, in MinistryInput) 
 	return err
 }
 
-// NOTE: The archived name gets a suffix so a new ministry can reuse it.
+/**
+ * NOTE: The archived name gets a suffix so a new ministry can reuse it. Its open swaps close with it, so an invitation
+ * answered later is told the swap is over.
+ */
 func (s *Store) ArchiveMinistry(ctx context.Context, id int64) error {
-	return requireAffected(s.db.ExecContext(ctx, `
-		UPDATE ministries
-		SET archived_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), name = name || ' (arquivado ' || id || ')'
-		WHERE id = ? AND archived_at IS NULL`, id))
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := requireAffected(tx.ExecContext(ctx, `
+			UPDATE ministries
+			SET archived_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), name = name || ' (arquivado ' || id || ')'
+			WHERE id = ? AND archived_at IS NULL`, id)); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `
+			UPDATE cover_requests SET status = 'uncovered', resolved_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+			WHERE status = 'open' AND assignment_id IN (
+				SELECT a.id FROM assignments a JOIN schedules sc ON sc.id = a.schedule_id WHERE sc.ministry_id = ?)`, id)
+		return err
+	})
 }
 
 func (s *Store) Ministry(ctx context.Context, id int64) (MinistryDetail, error) {

@@ -82,11 +82,12 @@ func (s *Store) AssignmentDetail(ctx context.Context, assignmentID int64) (Assig
 }
 
 /**
- * NOTE: Filled slots of published schedules with a service date in [from, to], ordered by date and time.
+ * NOTE: Filled slots of published schedules of active ministries with a service date in [from, to], ordered by date
+ * and time.
  */
 func (s *Store) UpcomingAssignments(ctx context.Context, from, to string) ([]AssignmentDetail, error) {
 	rows, err := s.db.QueryContext(ctx, assignmentDetailQuery+`
-		WHERE sc.status = 'published' AND a.person_id IS NOT NULL AND a.service_date BETWEEN ? AND ?
+		WHERE sc.status = 'published' AND m.archived_at IS NULL AND a.person_id IS NOT NULL AND a.service_date BETWEEN ? AND ?
 		ORDER BY a.service_date, sv.start_time, r.position, a.slot`, from, to)
 	if err != nil {
 		return nil, err
@@ -109,7 +110,7 @@ func (s *Store) UpcomingAssignments(ctx context.Context, from, to string) ([]Ass
  */
 func (s *Store) PersonAssignments(ctx context.Context, personID int64, from, to string) ([]AssignmentDetail, error) {
 	rows, err := s.db.QueryContext(ctx, assignmentDetailQuery+`
-		WHERE sc.status = 'published' AND a.person_id = ? AND a.status != 'declined' AND a.service_date BETWEEN ? AND ?
+		WHERE sc.status = 'published' AND m.archived_at IS NULL AND a.person_id = ? AND a.status != 'declined' AND a.service_date BETWEEN ? AND ?
 		ORDER BY a.service_date, sv.start_time, r.position, a.slot`, personID, from, to)
 	if err != nil {
 		return nil, err

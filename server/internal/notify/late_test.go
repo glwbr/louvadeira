@@ -151,3 +151,29 @@ func TestTheAnswerToADeclineNamesWhoIsBeingInvitedBeforeTheyAre(t *testing.T) {
 		t.Fatalf("%s got no invite", other)
 	}
 }
+
+func TestAnArchivedMinistryGetsNoMoreMessages(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	slot := w.slotOf("2026-11-19", "Baixo")
+	other := map[string]string{"Edu": "Fred", "Fred": "Edu"}[slot.PersonName]
+	if _, err := w.bot.Decline(ctx, []int64{slot.AssignmentID}, false); err != nil {
+		t.Fatal(err)
+	}
+	invite := lastPoll(t, w.fake.to(w.phone(other)))
+	if err := w.store.ArchiveMinistry(ctx, w.ministry.ID); err != nil {
+		t.Fatal(err)
+	}
+	w.fake.reset()
+
+	w.bot.Tick(ctx)
+	w.vote(invite, "✅ Consigo", false)
+	for _, m := range w.fake.sent {
+		if m.to != w.phone(other) {
+			t.Fatalf("sent %+v for an archived ministry", m)
+		}
+	}
+	if len(polls(w.fake.sent)) != 0 {
+		t.Fatalf("asked %+v for an archived ministry", polls(w.fake.sent))
+	}
+}
