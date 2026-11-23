@@ -28,6 +28,11 @@ const (
  * anything that is not a command, get no answer: the number also carries ordinary church conversations.
  */
 func (b *Bot) HandleText(ctx context.Context, msg messenger.Incoming) {
+	// NOTE: "não posso amanhã" needs today's date, so a text waits for the clock; the two-hour rule applies once it is right.
+	if !b.clockTrusted() {
+		time.AfterFunc(b.retryWait(), func() { b.HandleText(context.WithoutCancel(ctx), msg) })
+		return
+	}
 	sent := b.now()
 	if !msg.Time.IsZero() {
 		if b.now().Sub(msg.Time) > staleText {

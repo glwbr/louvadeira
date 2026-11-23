@@ -3,7 +3,11 @@ package notify_test
 import (
 	"context"
 	"runtime"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"louvadeira/internal/store"
 )
 
 func TestAStopDuringASendStartsNoOtherAndTheNextStartSendsThemAll(t *testing.T) {
@@ -69,5 +73,32 @@ func TestNothingScheduledGoesOutWhileTheClockIsUnsynced(t *testing.T) {
 	w.bot.Tick(context.Background())
 	if len(w.fake.sent) != 10 {
 		t.Fatalf("sent %d polls once synced, want 10", len(w.fake.sent))
+	}
+}
+
+func TestVotesAndTextsWaitForTheClock(t *testing.T) {
+	w := newWorld(t)
+	w.bot.Tick(context.Background())
+	bassist := w.slotOf("2026-11-19", "Baixo").PersonName
+	poll := w.fake.sentPollFor(t, w.phone(bassist), "19/11")
+	w.fake.reset()
+	var synced atomic.Bool
+	w.bot.ClockSynced = synced.Load
+	w.bot.Settle = 20 * time.Millisecond
+
+	w.vote(poll, "✅ Vou nos dois", false)
+	w.says(bassist, "ajuda")
+	time.Sleep(150 * time.Millisecond)
+	if slot := w.slotOf("2026-11-19", "Baixo"); slot.Status != store.AssignmentScheduled || len(w.fake.sent) != 0 {
+		t.Fatalf("acted with the clock unsynced: slot %+v, sent %+v", slot, w.fake.sent)
+	}
+
+	synced.Store(true)
+	time.Sleep(150 * time.Millisecond)
+	if slot := w.slotOf("2026-11-19", "Baixo"); slot.Status != store.AssignmentConfirmed {
+		t.Fatalf("slot = %+v after the clock synced", slot)
+	}
+	if !containsText(w.fake.to(w.phone(bassist)), "Assistente das escalas") {
+		t.Fatalf("the help was not sent after the clock synced: %+v", w.fake.to(w.phone(bassist)))
 	}
 }

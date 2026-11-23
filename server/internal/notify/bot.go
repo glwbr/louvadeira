@@ -363,7 +363,7 @@ func (b *Bot) person(ctx context.Context, id int64) (store.Person, bool) {
  * people outside the allowlist without recording them, so they still get the message once the app goes live.
  */
 func (b *Bot) Tick(ctx context.Context) {
-	if b.ClockSynced != nil && !b.ClockSynced() {
+	if !b.clockTrusted() {
 		if !b.clockWarned.Swap(true) {
 			b.Log.Warn("relógio sem sincronizar; as mensagens agendadas esperam")
 		}
@@ -573,7 +573,7 @@ func contains(list []string, value string) bool {
  * owner of that phone, so the leader browsing a member's chat cannot answer for them by accident.
  */
 func (b *Bot) HandleVote(ctx context.Context, vote messenger.Vote) {
-	if b.Settle <= 0 {
+	if b.Settle <= 0 && b.clockTrusted() {
 		b.applyVote(ctx, vote)
 		return
 	}
@@ -590,30 +590,59 @@ func (b *Bot) HandleVote(ctx context.Context, vote messenger.Vote) {
 	if timer, ok := b.pending[key]; ok {
 		timer.Stop()
 	}
-	b.pending[key] = time.AfterFunc(b.Settle, func() {
+	var timer *time.Timer
+	timer = time.AfterFunc(b.retryWait(), func() {
 		b.mu.Lock()
+		// NOTE: A newer vote from the same person replaced this one, and only the last counts.
+		if b.pending[key] != timer {
+			b.mu.Unlock()
+			return
+		}
+		// NOTE: Deciding a vote needs today's date (has its service happened?), so it waits for the clock.
+		if !b.clockTrusted() {
+			timer.Reset(b.retryWait())
+			b.mu.Unlock()
+			return
+		}
 		delete(b.pending, key)
 		b.mu.Unlock()
 		ctx := context.Background()
 		b.applyVote(ctx, vote)
 		_ = b.Store.DeletePendingVote(ctx, waiting)
 	})
+	b.pending[key] = timer
+}
+
+func (b *Bot) clockTrusted() bool {
+	return b.ClockSynced == nil || b.ClockSynced()
+}
+
+func (b *Bot) retryWait() time.Duration {
+	if b.Settle > 0 {
+		return b.Settle
+	}
+	return time.Second
 }
 
 /**
  * NOTE: Applies the votes that were still waiting when the server stopped. Every answer is safe to apply again, so a
- * vote that was also applied before the stop changes nothing and sends nothing.
+ * vote that was also applied before the stop changes nothing and sends nothing. Reports false, applying nothing,
+ * while the clock is not synced yet.
  */
-func (b *Bot) ReplayPendingVotes(ctx context.Context) {
+func (b *Bot) ReplayPendingVotes(ctx context.Context) bool {
+	if !b.clockTrusted() {
+		return false
+	}
 	votes, err := b.Store.PendingVotes(ctx)
 	if err != nil {
 		b.Log.Error("ler votos pendentes", "erro", err)
-		return
+		return false
 	}
 	for _, v := range votes {
 		b.applyVote(ctx, messenger.Vote{PollID: messenger.MessageID(v.PollID), Selected: v.Selected, FromMe: v.FromMe, From: messenger.Address(v.Voter)})
 		_ = b.Store.DeletePendingVote(ctx, v)
 	}
+	return true
 }
 
 func (b *Bot) applyVote(ctx context.Context, vote messenger.Vote) {

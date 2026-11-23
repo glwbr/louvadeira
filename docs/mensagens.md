@@ -9,7 +9,7 @@ no código, em `server/internal/notify/`, e valem para todos os ministérios.
 | --- | --- |
 | Janela das mensagens agendadas | Das 8h às 21h, no fuso de `LOUVADEIRA_TIMEZONE` |
 | Frequência da verificação | A cada 5 minutos, com o WhatsApp conectado |
-| Relógio do servidor | As mensagens agendadas esperam o relógio sincronizar pela internet (NTP) |
+| Relógio do servidor | As mensagens agendadas, os votos e os comandos esperam o relógio sincronizar pela internet (NTP) |
 | Pausa entre duas mensagens | De 2 a 5 segundos, aleatória |
 | Respostas a enquetes e comandos | Na hora, a qualquer horário |
 | Espera depois de um voto | 20 segundos, para contar só a última resposta de quem muda de ideia |

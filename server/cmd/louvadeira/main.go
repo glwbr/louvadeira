@@ -171,8 +171,7 @@ func runScheduler(ctx context.Context, bot *notify.Bot, wa *whatsapp.Client) {
 		case <-timer.C:
 			if wa.Status().Connected {
 				if !replayed {
-					bot.ReplayPendingVotes(ctx)
-					replayed = true
+					replayed = bot.ReplayPendingVotes(ctx)
 				}
 				bot.Tick(ctx)
 			}
