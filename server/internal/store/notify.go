@@ -505,36 +505,51 @@ func (s *Store) OpenCoverRequest(ctx context.Context, assignmentID int64, late b
 }
 
 func (s *Store) AddCoverInvite(ctx context.Context, requestID, personID int64) error {
-	_, err := s.db.ExecContext(ctx, "INSERT INTO cover_invites (request_id, person_id) VALUES (?, ?) ON CONFLICT DO NOTHING", requestID, personID)
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO cover_invites (request_id, person_id) VALUES (?, ?)
+		ON CONFLICT DO UPDATE SET sent = 1`, requestID, personID)
 	return err
 }
 
-type OpenRequest struct {
-	ID           int64
+/**
+ * NOTE: AddUnsentInvite records an invitation whose send failed. The swap counts it as unanswered, so it stays open
+ * for that person while the invitation is tried again.
+ */
+func (s *Store) AddUnsentInvite(ctx context.Context, requestID, personID int64) error {
+	_, err := s.db.ExecContext(ctx, "INSERT INTO cover_invites (request_id, person_id, sent) VALUES (?, ?, 0) ON CONFLICT DO NOTHING", requestID, personID)
+	return err
+}
+
+type UnsentInvite struct {
+	RequestID    int64
+	PersonID     int64
 	AssignmentID int64
 	Late         bool
+	OpenedAt     time.Time
 }
 
 /**
- * NOTE: Swaps still open with nobody invited, because every invitation failed to send; opened before the given time.
+ * NOTE: Invitations of open swaps that failed to send, for swaps opened before the given time.
  */
-func (s *Store) UninvitedRequests(ctx context.Context, before time.Time) ([]OpenRequest, error) {
+func (s *Store) UnsentInvites(ctx context.Context, before time.Time) ([]UnsentInvite, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT cr.id, cr.assignment_id, cr.late FROM cover_requests cr
-		WHERE cr.status = 'open' AND cr.created_at <= ?
-		  AND NOT EXISTS (SELECT 1 FROM cover_invites ci WHERE ci.request_id = cr.id)
-		ORDER BY cr.created_at`, formatTime(before))
+		SELECT ci.request_id, ci.person_id, cr.assignment_id, cr.late, cr.created_at FROM cover_invites ci
+		JOIN cover_requests cr ON cr.id = ci.request_id
+		WHERE ci.sent = 0 AND ci.answer IS NULL AND cr.status = 'open' AND cr.created_at <= ?
+		ORDER BY ci.person_id, cr.created_at, ci.request_id`, formatTime(before))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var list []OpenRequest
+	var list []UnsentInvite
 	for rows.Next() {
-		var r OpenRequest
-		if err := rows.Scan(&r.ID, &r.AssignmentID, &r.Late); err != nil {
+		var u UnsentInvite
+		var opened string
+		if err := rows.Scan(&u.RequestID, &u.PersonID, &u.AssignmentID, &u.Late, &opened); err != nil {
 			return nil, err
 		}
-		list = append(list, r)
+		u.OpenedAt, _ = time.Parse(timeLayout, opened)
+		list = append(list, u)
 	}
 	return list, rows.Err()
 }

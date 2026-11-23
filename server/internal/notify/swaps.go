@@ -282,6 +282,9 @@ func (b *Bot) inviteCovers(ctx context.Context, swaps []*swap, why absence) {
 			if !b.sendInvite(ctx, candidate, chunk, why) {
 				for _, o := range chunk {
 					for _, s := range o.swaps {
+						if err := b.Store.AddUnsentInvite(ctx, s.request, candidate.ID); err != nil {
+							b.Log.Error("registrar convite não enviado", "erro", err)
+						}
 						s.failed = append(s.failed, candidate.Name)
 					}
 				}
@@ -711,35 +714,46 @@ const (
 )
 
 /**
- * NOTE: Retries swaps whose invitations all failed to send (WhatsApp was down). Once someone can be invited the swap
- * goes on as usual; when nobody is free anymore, or a day went by, the leaders hear it needs them.
+ * NOTE: Tries again the invitations that failed to send (WhatsApp was down), each person getting one invitation with
+ * every place they still have to hear about. One that cannot be sent for a day, or whose service is about to start,
+ * counts as a no: when nobody else is left, the leaders hear the swap needs them.
  */
 func (b *Bot) retryInvites(ctx context.Context) {
-	requests, err := b.Store.UninvitedRequests(ctx, b.now().Add(-retryAfter))
+	unsent, err := b.Store.UnsentInvites(ctx, b.now().Add(-retryAfter))
 	if err != nil {
-		b.Log.Error("buscar trocas sem convite", "erro", err)
+		b.Log.Error("buscar convites não enviados", "erro", err)
 		return
 	}
-	for _, r := range requests {
-		d, err := b.Store.AssignmentDetail(ctx, r.AssignmentID)
-		if err != nil {
-			continue
+	people, byPerson := groupBy(unsent, func(u store.UnsentInvite) int64 { return u.PersonID })
+	for _, personID := range people {
+		person, ok := b.person(ctx, personID)
+		var swaps []*swap
+		var expired []int64
+		for _, u := range byPerson[personID] {
+			d, err := b.Store.AssignmentDetail(ctx, u.AssignmentID)
+			if err != nil {
+				continue
+			}
+			if !ok || !b.Upcoming(d) || b.now().Sub(u.OpenedAt) >= retryUntil {
+				expired = append(expired, u.RequestID)
+				continue
+			}
+			swaps = append(swaps, &swap{detail: d, request: u.RequestID, late: u.Late})
 		}
-		result, err := b.Store.CoverRequestResult(ctx, r.ID)
-		if err != nil {
-			continue
-		}
-		opened, _ := time.Parse(time.RFC3339Nano, result.Request.CreatedAt)
-		s := &swap{detail: d, request: r.ID, late: r.Late}
-		if b.Upcoming(d) {
-			b.inviteCovers(ctx, []*swap{s}, absence{})
-		}
-		if len(s.invited) > 0 || (len(s.failed) > 0 && b.now().Sub(opened) < retryUntil && b.Upcoming(d)) {
-			continue
-		}
-		_ = b.Store.CloseCoverRequest(ctx, r.ID, b.now())
-		if b.Upcoming(d) {
-			b.tellLeaders(ctx, d.MinistryID, uncoveredAlert(d, result.Absent.Name, []string{slotLine(d)}), result.Absent.ID)
+		b.refuseCovers(ctx, store.Person{ID: personID}, expired, false)
+		offers := groupOffers(swaps)
+		for start := 0; start < len(offers); start += maxPollSlots {
+			chunk := offers[start:min(start+maxPollSlots, len(offers))]
+			if !b.sendInvite(ctx, person, chunk, absence{}) {
+				continue
+			}
+			for _, o := range chunk {
+				for _, s := range o.swaps {
+					if err := b.Store.AddCoverInvite(ctx, s.request, person.ID); err != nil {
+						b.Log.Error("registrar convite", "erro", err)
+					}
+				}
+			}
 		}
 	}
 }

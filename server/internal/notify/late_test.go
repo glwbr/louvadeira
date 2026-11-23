@@ -217,3 +217,69 @@ func TestSomeoneWhoLeftNoLongerHoldsASwapOrTheirSlots(t *testing.T) {
 		t.Fatalf("leader = %+v", w.fake.to(w.phone("Líder")))
 	}
 }
+
+func TestAnInvitationThatFailedIsRetriedEvenWhenAnotherWentOut(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	var slot store.ScheduleSlot
+	for _, v := range w.slotsOf(sunday, "Voz") {
+		if v.PersonName != "Líder" {
+			slot = v
+		}
+	}
+	free := w.freeVoices()
+	unreached, reached := free[0], free[1]
+	w.fake.fail = func(m message) error {
+		if m.to == w.phone(unreached) {
+			return errors.New("websocket EOF")
+		}
+		return nil
+	}
+	if _, err := w.bot.Decline(ctx, []int64{slot.AssignmentID}, false); err != nil {
+		t.Fatal(err)
+	}
+	w.vote(lastPoll(t, w.fake.to(w.phone(reached))), "😕 Dessa vez não", false)
+	if containsText(w.fake.to(w.phone("Líder")), "Ninguém conseguiu substituir") {
+		t.Fatal("the swap ended before reaching everyone")
+	}
+
+	w.fake.fail = nil
+	w.clock = w.clock.Add(5 * time.Minute)
+	w.bot.Tick(ctx)
+	w.bot.Tick(ctx)
+	invites := polls(w.fake.to(w.phone(unreached)))
+	if len(invites) != 1 {
+		t.Fatalf("%s got %d invitations after the retry, want 1", unreached, len(invites))
+	}
+	w.vote(invites[0], "✅ Consigo", false)
+	for _, v := range w.slotsOf(sunday, "Voz") {
+		if v.AssignmentID == slot.AssignmentID && v.PersonName != unreached {
+			t.Fatalf("slot = %+v, want %s", v, unreached)
+		}
+	}
+}
+
+func TestAnInvitationThatCannotBeSentForADayCountsAsANo(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	slot := w.slotOf("2026-11-22", "Baixo")
+	other := map[string]string{"Edu": "Fred", "Fred": "Edu"}[slot.PersonName]
+	w.fake.fail = func(m message) error {
+		if m.to == w.phone(other) {
+			return errors.New("websocket EOF")
+		}
+		return nil
+	}
+	if _, err := w.bot.Decline(ctx, []int64{slot.AssignmentID}, false); err != nil {
+		t.Fatal(err)
+	}
+	w.fake.reset()
+	w.clock = w.clock.Add(25 * time.Hour)
+	w.bot.Tick(ctx)
+	if !containsText(w.fake.to(w.phone("Líder")), "Ninguém conseguiu substituir "+slot.PersonName) {
+		t.Fatalf("leader = %+v", w.fake.to(w.phone("Líder")))
+	}
+	if s := w.slotOf("2026-11-22", "Baixo"); s.CoverOpen {
+		t.Fatalf("slot = %+v, want the swap closed", s)
+	}
+}

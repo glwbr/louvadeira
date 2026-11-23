@@ -70,8 +70,9 @@ outro volta para a escala do primeiro dia, desde que ninguém tenha aceitado o l
 | Quem saiu volta atrás | Cada líder e quem ainda estava convidado | Aviso de que a pessoa vai, afinal |
 | Um líder escolhe "📣 Pedir no grupo" | Grupo do ministério | Enquete com uma opção "🙋 Eu posso" por função em falta |
 
-Um convite que não pôde ser enviado é tentado de novo a cada verificação, das 8h às 21h, por até 24 horas. Depois
-disso, os líderes recebem o pedido de ajuda.
+Um convite que não pôde ser enviado é tentado de novo a cada verificação, das 8h às 21h, por até 24 horas, mesmo
+que outras pessoas já tenham recebido o delas. Depois disso, ele conta como recusa: se ninguém mais aceitar, os
+líderes recebem o pedido de ajuda.
 
 Uma resposta a enquete que chega ao servidor depois que o culto começou, porque ele estava fora do ar, não muda a
 escala desse culto e não gera mensagens.
