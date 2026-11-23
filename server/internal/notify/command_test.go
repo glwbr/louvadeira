@@ -68,3 +68,27 @@ func TestParseCommandUntilWithDayWord(t *testing.T) {
 		t.Fatalf("até o dia 20/12 = %q", got)
 	}
 }
+
+func TestDaysWithoutAMonthAndListsSharingOne(t *testing.T) {
+	cases := []struct {
+		text   string
+		today  time.Time
+		ranges string
+	}{
+		{"não posso dia 15", time.Date(2027, 1, 31, 10, 0, 0, 0, time.UTC), "2027-02-15"},
+		{"não posso dia 10", time.Date(2027, 3, 31, 10, 0, 0, 0, time.UTC), "2027-04-10"},
+		{"não posso dia 31", time.Date(2027, 4, 10, 10, 0, 0, 0, time.UTC), "2027-05-31"},
+		{"não posso dia 30", time.Date(2027, 2, 10, 10, 0, 0, 0, time.UTC), "2027-03-30"},
+		{"não posso dia 19 e 22/11", time.Date(2026, 10, 5, 10, 0, 0, 0, time.UTC), "2026-11-19 2026-11-22"},
+		{"não posso 19 e 22/11", time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC), "2026-11-19 2026-11-22"},
+		{"não posso 19, 20 e 22/11", time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC), "2026-11-19 2026-11-20 2026-11-22"},
+		{"não posso dia 3 e 6/1/27", time.Date(2026, 12, 20, 10, 0, 0, 0, time.UTC), "2027-01-03 2027-01-06"},
+		{"não posso de 10/12 a 20/12", time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC), "2026-12-10..2026-12-20"},
+	}
+	for _, c := range cases {
+		cmd, ok := parseCommand(c.text, c.today)
+		if !ok || rangesText(cmd) != c.ranges {
+			t.Errorf("%q on %s = %q (ok %v), want %q", c.text, c.today.Format("02/01"), rangesText(cmd), ok, c.ranges)
+		}
+	}
+}

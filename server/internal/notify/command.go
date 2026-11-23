@@ -35,6 +35,7 @@ var (
 	spaces        = regexp.MustCompile(`\s+`)
 	dateWord      = regexp.MustCompile(`(?:dia )?(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?|dia (\d{1,2})|domingo|segunda|terca|quarta|quinta|sexta|sabado|hoje|amanha`)
 	dayList       = regexp.MustCompile(`dia \d{1,2}((?: (?:e )?\d{1,2}\b)+)`)
+	monthList     = regexp.MustCompile(`(?:dia )?((?:\d{1,2} (?:e )?)+)(\d{1,2})/(\d{1,2}(?:/\d{2,4})?)\b`)
 	rangeLink     = regexp.MustCompile(`^\s*(a|ate|ao|e)\s*(o\s+)?(dia\s+)?$`)
 	weekdayNames  = map[string]time.Weekday{"domingo": time.Sunday, "segunda": time.Monday, "terca": time.Tuesday, "quarta": time.Wednesday, "quinta": time.Thursday, "sexta": time.Friday, "sabado": time.Saturday}
 )
@@ -77,6 +78,17 @@ func parseCommand(text string, today time.Time) (command, bool) {
  * Dates without a year, and days without a month, mean the next time that day comes.
  */
 func parseRanges(text string, today time.Time) []store.DateRange {
+	// NOTE: In "19 e 22/11" the month written once belongs to every day before it; spell each out as "N/11".
+	text = monthList.ReplaceAllStringFunc(text, func(list string) string {
+		m := monthList.FindStringSubmatch(list)
+		var days []string
+		for _, field := range strings.Fields(m[1]) {
+			if field != "e" {
+				days = append(days, field+"/"+m[3])
+			}
+		}
+		return strings.Join(append(days, m[2]+"/"+m[3]), " e ")
+	})
 	// NOTE: "dia 22, 19 e 15" lists more days after the first one; spell each out as "dia N".
 	text = dayList.ReplaceAllStringFunc(text, func(list string) string {
 		var days []string
@@ -147,12 +159,7 @@ func resolveDate(text string, m []int, today time.Time) (time.Time, bool) {
 		return date, ok
 	case group(4) != "":
 		d, _ := strconv.Atoi(group(4))
-		date, ok := validDate(today.Year(), today.Month(), d)
-		if ok && date.Before(today) {
-			next := today.AddDate(0, 1, 0)
-			date, ok = validDate(next.Year(), next.Month(), d)
-		}
-		return date, ok
+		return nextDay(today, d)
 	case word == "hoje":
 		return today, true
 	case word == "amanha":
@@ -160,6 +167,17 @@ func resolveDate(text string, m []int, today time.Time) (time.Time, bool) {
 	}
 	weekday := weekdayNames[word]
 	return today.AddDate(0, 0, (int(weekday)-int(today.Weekday())+7)%7), true
+}
+
+// NOTE: A day without a month is the next time a month has it: "dia 31" sent in April is 31/05.
+func nextDay(today time.Time, day int) (time.Time, bool) {
+	for months := 0; months < 12; months++ {
+		first := time.Date(today.Year(), today.Month()+time.Month(months), 1, 0, 0, 0, 0, time.UTC)
+		if date, ok := validDate(first.Year(), first.Month(), day); ok && !date.Before(today) {
+			return date, true
+		}
+	}
+	return time.Time{}, false
 }
 
 func validDate(year int, month time.Month, day int) (time.Time, bool) {
