@@ -152,6 +152,23 @@ func (s *Store) UnmarkNotified(ctx context.Context, key string) error {
 	return err
 }
 
+func (s *Store) NotificationKeys(ctx context.Context, prefix string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT key FROM notifications WHERE substr(key, 1, ?) = ? ORDER BY sent_at", len(prefix), prefix)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var keys []string
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		keys = append(keys, key)
+	}
+	return keys, rows.Err()
+}
+
 /**
  * NOTE: ClaimNotification records a scheduled message as on its way, unless it was already recorded, and reports
  * whether this call recorded it. SettleNotification marks it sent once WhatsApp takes it; UnmarkNotified drops it

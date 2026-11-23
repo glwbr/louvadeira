@@ -275,6 +275,7 @@ func (b *Bot) Tick(ctx context.Context) {
 		}
 	}
 	b.retryInvites(ctx)
+	b.retryAnnouncements(ctx, now)
 	b.sendConfirmations(ctx, future, now)
 	b.remindServices(ctx, future, now)
 	if now.Hour() >= pendingHour {
@@ -617,22 +618,65 @@ func containsID(list []int64, id int64) bool {
 	return false
 }
 
+type announcement int
+
+const (
+	withoutGroup announcement = iota
+	announced
+	announceLater
+)
+
 /**
  * NOTE: Posts the published month to the ministry group in the format the team already uses: one line per service
  * with the people in rotation (fixed members are implied), a 🍷 on Lord's Supper days and the missing roles.
  */
 func (b *Bot) AnnouncePublished(ctx context.Context, ministryID int64, month string) {
+	b.announce(ctx, ministryID, month)
+}
+
+/**
+ * NOTE: A month goes to the group once. A post that fails is remembered and tried again by the next ticks while the
+ * month is not over (retryAnnouncements), so the group never misses a published month.
+ */
+func (b *Bot) announce(ctx context.Context, ministryID int64, month string) announcement {
 	ministry, err := b.Store.Ministry(ctx, ministryID)
-	if err != nil || ministry.WhatsAppGroup == "" {
-		return
+	if err != nil || !b.allows(ministry.WhatsAppGroup) {
+		return withoutGroup
 	}
-	view, err := b.Store.ScheduleView(ctx, ministryID, month)
+	key := fmt.Sprintf("announce:%d:%s", ministryID, month)
+	b.once(ctx, key, func(ctx context.Context) bool {
+		view, err := b.Store.ScheduleView(ctx, ministryID, month)
+		if err != nil {
+			b.Log.Error("ler escala para anunciar", "erro", err)
+			return false
+		}
+		text, marked := summarize(ministry, view, true)
+		return b.mention(ctx, ministry.WhatsAppGroup, text, marked...)
+	})
+	retry := "announce-retry:" + key
+	if _, done := b.Store.NotifiedAt(ctx, key); done {
+		_ = b.Store.UnmarkNotified(ctx, retry)
+		return announced
+	}
+	_, _ = b.Store.MarkNotified(ctx, retry, b.now())
+	return announceLater
+}
+
+func (b *Bot) retryAnnouncements(ctx context.Context, now time.Time) {
+	keys, err := b.Store.NotificationKeys(ctx, "announce-retry:announce:")
 	if err != nil {
-		b.Log.Error("ler escala para anunciar", "erro", err)
+		b.Log.Error("buscar escalas por anunciar", "erro", err)
 		return
 	}
-	text, marked := summarize(ministry, view, true)
-	b.mention(ctx, ministry.WhatsAppGroup, text, marked...)
+	for _, key := range keys {
+		var ministryID int64
+		var month string
+		if _, err := fmt.Sscanf(key, "announce-retry:announce:%d:%s", &ministryID, &month); err != nil || month < now.Format("2006-01") {
+			_ = b.Store.UnmarkNotified(ctx, key)
+			continue
+		}
+		b.announce(ctx, ministryID, month)
+	}
 }
 
 /**

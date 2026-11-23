@@ -165,3 +165,34 @@ func TestAProposalThatFailedToSendGoesOutOnTheNextTick(t *testing.T) {
 		t.Fatal("the proposal went out twice")
 	}
 }
+
+func TestAMonthTheGroupDidNotGetIsPostedAgainAndTheLeaderIsTold(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	w.clock = time.Date(2026, 11, 20, 10, 0, 0, 0, saoPaulo)
+	w.bot.Tick(ctx)
+	w.clock = time.Date(2026, 11, 23, 10, 0, 0, 0, saoPaulo)
+	w.bot.Tick(ctx)
+	approval := lastPoll(t, w.fake.to(w.phone("Líder")))
+
+	w.fake.reset()
+	w.fake.fail = func(m message) error {
+		if m.to == group {
+			return errors.New("websocket EOF")
+		}
+		return nil
+	}
+	w.vote(approval, "✅ Pode publicar", false)
+	if !containsText(w.fake.to(w.phone("Líder")), "Não consegui mandar a escala de dezembro no grupo agora") {
+		t.Fatalf("leader reply = %+v", w.fake.to(w.phone("Líder")))
+	}
+
+	w.fake.fail = nil
+	w.clock = time.Date(2026, 11, 23, 10, 5, 0, 0, saoPaulo)
+	w.bot.Tick(ctx)
+	w.clock = time.Date(2026, 11, 23, 10, 10, 0, 0, saoPaulo)
+	w.bot.Tick(ctx)
+	if posts := w.fake.to(group); len(posts) != 1 || !strings.Contains(posts[0].text, "Escala do *Louvor* de dezembro") {
+		t.Fatalf("group = %+v, want december posted once", posts)
+	}
+}

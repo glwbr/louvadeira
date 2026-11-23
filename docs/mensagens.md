@@ -29,6 +29,9 @@ A rodada trata da escala do mês seguinte e roda para cada ministério que ainda
 
 Uma enquete do WhatsApp aceita 12 opções. Um mês com mais de 11 cultos é dividido em mais de uma enquete.
 
+Se a escala publicada não chega ao grupo porque o envio falhou, o líder que aprovou fica sabendo, e o bot tenta de
+novo a cada verificação até o fim do mês.
+
 ## Semana do culto
 
 | Quando | Para quem | Mensagem |

@@ -409,8 +409,14 @@ func approvalQuestion(month string) string {
 	return fmt.Sprintf("🗓️ Posso publicar a escala de %s no grupo?", monthName(month))
 }
 
-func publishedReply(month string) string {
-	return fmt.Sprintf("🎉 *Publicada!* Já mandei a escala de %s no grupo.", monthName(month))
+func publishedReply(month string, outcome announcement) string {
+	switch outcome {
+	case announced:
+		return fmt.Sprintf("🎉 *Publicada!* Já mandei a escala de %s no grupo.", monthName(month))
+	case announceLater:
+		return fmt.Sprintf("🎉 *Publicada!* Não consegui mandar a escala de %s no grupo agora; vou tentar de novo em alguns minutos.", monthName(month))
+	}
+	return fmt.Sprintf("🎉 *Publicada!* A escala de %s já aparece no app.", monthName(month))
 }
 
 func alreadyPublishedReply(month string) string {

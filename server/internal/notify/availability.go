@@ -237,6 +237,5 @@ func (b *Bot) answerApproval(ctx context.Context, leader store.Person, pollID me
 		b.Log.Error("publicar escala", "erro", err)
 		return
 	}
-	b.AnnouncePublished(ctx, option.Ministry, option.Month)
-	b.send(ctx, leader.Phone, publishedReply(option.Month))
+	b.send(ctx, leader.Phone, publishedReply(option.Month, b.announce(ctx, option.Ministry, option.Month)))
 }
