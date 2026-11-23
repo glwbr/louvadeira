@@ -291,6 +291,10 @@ func comebackReleased(name, returning string, d store.AssignmentDetail) string {
 	return fmt.Sprintf("Não precisa mais, %s: %s vai conseguir ir (%s). Obrigado pela disposição! 🙏", firstName(name), returning, slotText(d))
 }
 
+func swapSettledReply(name string, d store.AssignmentDetail) string {
+	return fmt.Sprintf("Não precisa mais, %s: a liderança ajustou a escala (%s). Obrigado pela disposição! 🙏", firstName(name), slotText(d))
+}
+
 func comebackAlert(returning string, d store.AssignmentDetail) string {
 	return fmt.Sprintf("↩️ *%s* conseguiu ir, afinal (%s)\n%s", returning, d.MinistryName, slotLine(d))
 }

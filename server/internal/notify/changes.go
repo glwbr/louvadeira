@@ -19,13 +19,24 @@ func (b *Bot) AnnounceChange(ctx context.Context, change store.AssignmentChange,
 		return
 	}
 	before := change.Before
-	if before != nil && before.ID == d.PersonID {
-		return
-	}
 	line := slotLine(d)
 	var after *store.Person
 	if d.PersonID != 0 {
 		after = &store.Person{ID: d.PersonID, Name: d.PersonName, Phone: d.Phone}
+	}
+	// NOTE: Whoever was still invited hears the swap is over, whatever the change: the slot taken by someone else,
+	// given back to the person who had stepped out, or emptied.
+	for _, p := range change.Waiting {
+		switch {
+		case after != nil && after.ID == p.ID:
+		case after != nil && (before == nil || before.ID != after.ID):
+			b.send(ctx, p.Phone, alreadyTakenReply(p.Name, after.Name, []string{line}))
+		default:
+			b.send(ctx, p.Phone, swapSettledReply(p.Name, d))
+		}
+	}
+	if before != nil && before.ID == d.PersonID {
+		return
 	}
 
 	if before != nil {
@@ -51,12 +62,6 @@ func (b *Bot) AnnounceChange(ctx context.Context, change store.AssignmentChange,
 		b.tellLeaders(ctx, d.MinistryID, swapAnnouncement(d.MinistryName, after.Name, before.Name, []string{line}), actor, before.ID, after.ID)
 	default:
 		b.tellLeaders(ctx, d.MinistryID, gapFilledAnnouncement(d.MinistryName, after.Name, line), actor, after.ID)
-	}
-
-	for _, p := range change.Waiting {
-		if p.ID != after.ID {
-			b.send(ctx, p.Phone, alreadyTakenReply(p.Name, after.Name, []string{line}))
-		}
 	}
 
 	if b.now().Before(b.confirmOpens(d)) {

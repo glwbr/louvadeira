@@ -149,3 +149,25 @@ func TestChangesToPastServicesStayQuiet(t *testing.T) {
 		t.Fatalf("sent = %+v", w.fake.sent)
 	}
 }
+
+func TestEmptyingOrGivingBackASlotReleasesWhoWasInvited(t *testing.T) {
+	for _, give := range []bool{false, true} {
+		w := newWorld(t)
+		slot := w.slotOf("2026-11-19", "Baixo")
+		bassist := slot.PersonName
+		other := map[string]string{"Edu": "Fred", "Fred": "Edu"}[bassist]
+		if _, err := w.bot.Decline(context.Background(), []int64{slot.AssignmentID}, false); err != nil {
+			t.Fatal(err)
+		}
+		w.fake.reset()
+
+		if give {
+			w.change(slot, bassist)
+		} else {
+			w.change(slot, "")
+		}
+		if !containsText(w.fake.to(w.phone(other)), "Não precisa mais") {
+			t.Fatalf("giving back %v: %s was not released: %+v", give, other, w.fake.to(w.phone(other)))
+		}
+	}
+}
