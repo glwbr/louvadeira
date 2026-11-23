@@ -307,3 +307,27 @@ func TestThePendingAlertGoesOutAt9hThreeDaysBefore(t *testing.T) {
 		t.Fatalf("no alert at 9h on thursday about sunday: %+v", w.fake.to(w.phone("Líder")))
 	}
 }
+
+func TestADayOffInThePollKeepsAnAbsenceRegisteredElsewhere(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	w.bot.Tick(ctx)
+	bassist := w.slotOf("2026-11-19", "Baixo").PersonName
+	poll := w.fake.sentPollFor(t, w.phone(bassist), "19/11")
+	trip, err := w.store.CreateUnavailability(ctx, store.UnavailabilityInput{PersonID: w.people[bassist].ID, StartDate: "2026-11-22", EndDate: "2026-11-22", Reason: store.ReasonTravel})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.bot.DeclinePeriod(ctx, trip); err != nil {
+		t.Fatal(err)
+	}
+	w.fake.reset()
+
+	w.vote(poll, "😕 Não consigo na quinta (19/11)", false)
+	if sunday := w.slotOf("2026-11-22", "Baixo"); sunday.Status != store.AssignmentDeclined || !sunday.CoverOpen {
+		t.Fatalf("sunday = %+v, want the trip to stand", sunday)
+	}
+	if containsText(w.fake.to(w.phone("Líder")), "conseguiu ir, afinal") {
+		t.Fatalf("leader = %+v", w.fake.to(w.phone("Líder")))
+	}
+}

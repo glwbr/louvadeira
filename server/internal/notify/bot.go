@@ -580,13 +580,45 @@ func (b *Bot) applyVote(ctx context.Context, vote messenger.Vote) {
 	option := chosen[len(chosen)-1]
 	switch option.Action {
 	case actionConfirm:
+		for _, id := range option.Assignments {
+			_ = b.Store.UnmarkNotified(ctx, pollDeclineKey(vote.PollID, id))
+		}
 		b.confirm(ctx, person, option.Assignments, true)
 	case actionDecline:
 		b.declineOwn(ctx, person, option.Assignments)
-		// NOTE: "Não consigo no domingo" also says the person goes on the other days, and switching from another day
-		// takes that day's absence back.
-		if rest := otherSlots(poll.Options, option.Assignments); len(rest) > 0 {
-			b.confirm(ctx, person, rest, false)
+		for _, id := range option.Assignments {
+			_, _ = b.Store.MarkNotified(ctx, pollDeclineKey(vote.PollID, id), b.now())
+		}
+		b.goingOnOtherDays(ctx, person, vote.PollID, otherSlots(poll.Options, option.Assignments))
+	}
+}
+
+func pollDeclineKey(pollID messenger.MessageID, assignmentID int64) string {
+	return fmt.Sprintf("poll-decline:%s:%d", pollID, assignmentID)
+}
+
+/**
+ * NOTE: "Não consigo no domingo" also says the person goes on the other days of the poll. Those still unanswered are
+ * confirmed, and a day declined earlier in this same poll is taken back. A day declined some other way (an absence in
+ * the app, a message, a leader) stays declined: this answer is not about it.
+ */
+func (b *Bot) goingOnOtherDays(ctx context.Context, person store.Person, pollID messenger.MessageID, rest []int64) {
+	var takenBack, unanswered []int64
+	for _, id := range rest {
+		key := pollDeclineKey(pollID, id)
+		if _, ok := b.Store.NotifiedAt(ctx, key); ok {
+			takenBack = append(takenBack, id)
+			_ = b.Store.UnmarkNotified(ctx, key)
+			continue
+		}
+		unanswered = append(unanswered, id)
+	}
+	if len(takenBack) > 0 {
+		b.confirm(ctx, person, takenBack, false)
+	}
+	if ids := b.upcomingSlots(ctx, unanswered); len(ids) > 0 {
+		if _, err := b.Store.SetAssignmentsStatus(ctx, person.ID, ids, store.AssignmentConfirmed, b.now()); err != nil {
+			b.Log.Error("confirmar presença", "erro", err)
 		}
 	}
 }
