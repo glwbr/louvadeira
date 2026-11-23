@@ -14,7 +14,7 @@ no código, em `server/internal/notify/`, e valem para todos os ministérios.
 | Espera depois de um voto | 20 segundos, para contar só a última resposta de quem muda de ideia |
 
 Cada mensagem agendada sai uma vez. Depois de uma parada, o servidor envia o que ficou para trás e não repete o que
-já foi enviado.
+já foi enviado. Uma mensagem interrompida no meio do envio, por um reinício ou uma queda de energia, sai de novo.
 
 ## Rodada do mês
 

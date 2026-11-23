@@ -61,6 +61,8 @@ func run(ctx context.Context, args []string) error {
 }
 
 func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	db, err := storage.Open(ctx, cfg.AppDBPath())
 	if err != nil {
 		return err
@@ -75,6 +77,11 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return fmt.Errorf("fuso horário %q: %w", cfg.Timezone, err)
 	}
 	registry := store.New(db)
+	if n, err := registry.DropUnsentClaims(ctx); err != nil {
+		return err
+	} else if n > 0 {
+		log.Warn("mensagens interrompidas na última parada; vão sair de novo", "quantas", n)
+	}
 	bot := &notify.Bot{Store: registry, Log: log, Location: location, Settle: 20 * time.Second}
 	deps := httpserver.Deps{
 		Log:          log,
@@ -102,7 +109,16 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		wa.OnVote(bot.HandleVote)
 		wa.OnText(bot.HandleText)
 		go keepConnecting(ctx, wa, log)
-		go runScheduler(ctx, bot, wa)
+		scheduler := make(chan struct{})
+		go func() {
+			defer close(scheduler)
+			runScheduler(ctx, bot, wa)
+		}()
+		// NOTE: Waits for the message in flight, so a stop never cuts a send in half.
+		defer func() {
+			cancel()
+			<-scheduler
+		}()
 	}
 
 	server := &http.Server{Addr: cfg.Addr, Handler: httpserver.New(deps), ReadHeaderTimeout: 10 * time.Second}

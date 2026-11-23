@@ -49,13 +49,7 @@ func (b *Bot) alertGaps(ctx context.Context, now time.Time) {
 	}
 	services, byService := groupBy(open, func(g store.ServiceGap) gapService { return gapService{g.MinistryID, g.ServiceID, g.Date} })
 	for _, k := range services {
-		key := gapKey(k)
-		if first, err := b.Store.MarkNotified(ctx, key, b.now()); err != nil || !first {
-			continue
-		}
-		if b.askAboutGaps(ctx, byService[k]) == 0 {
-			_ = b.Store.UnmarkNotified(ctx, key)
-		}
+		b.once(ctx, gapKey(k), func(ctx context.Context) bool { return b.askAboutGaps(ctx, byService[k]) > 0 })
 	}
 }
 

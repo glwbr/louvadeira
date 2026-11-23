@@ -97,9 +97,6 @@ func (b *Bot) askAvailability(ctx context.Context, ministry store.MinistryDetail
 		for start := 0; start < len(occurrences); start += maxPollSlots {
 			chunk := occurrences[start:min(start+maxPollSlots, len(occurrences))]
 			part := fmt.Sprintf("%s:%d", askedKey(ministry.ID, member.PersonID, month), start)
-			if first, err := b.Store.MarkNotified(ctx, part, b.now()); err != nil || !first {
-				continue
-			}
 			options := make([]store.PollOption, 0, len(chunk)+1)
 			for _, o := range chunk {
 				label := capitalize(weekday(o.Date)) + ", " + dayMonth(o.Date)
@@ -110,11 +107,12 @@ func (b *Bot) askAvailability(ctx context.Context, ministry store.MinistryDetail
 					Ranges: []store.DateRange{{From: o.Date, To: o.Date}}})
 			}
 			options = append(options, store.PollOption{Label: optionAvailableAll, Action: actionAvailable, Ministry: ministry.ID, Month: month})
-			if !b.sendPoll(ctx, store.PollConfirm, person, availabilityQuestion(member.Name, ministry.Name, month), options, true) {
-				_ = b.Store.UnmarkNotified(ctx, part)
-				continue
+			question := availabilityQuestion(member.Name, ministry.Name, month)
+			if b.once(ctx, part, func(ctx context.Context) bool {
+				return b.sendPoll(ctx, store.PollConfirm, person, question, options, true)
+			}) {
+				_, _ = b.Store.MarkNotified(ctx, askedKey(ministry.ID, member.PersonID, month), b.now())
 			}
-			_, _ = b.Store.MarkNotified(ctx, askedKey(ministry.ID, member.PersonID, month), b.now())
 		}
 	}
 }
@@ -148,13 +146,9 @@ func (b *Bot) remindAvailability(ctx context.Context, ministry store.MinistryDet
 		if _, answered := b.Store.NotifiedAt(ctx, answeredKey(ministry.ID, member.PersonID, month)); answered {
 			continue
 		}
-		key := fmt.Sprintf("availability-remind:%d:%d:%s", ministry.ID, member.PersonID, month)
-		if first, err := b.Store.MarkNotified(ctx, key, b.now()); err != nil || !first {
-			continue
-		}
-		if !b.send(ctx, member.Phone, availabilityReminder(member.Name, month)) {
-			_ = b.Store.UnmarkNotified(ctx, key)
-		}
+		b.once(ctx, fmt.Sprintf("availability-remind:%d:%d:%s", ministry.ID, member.PersonID, month), func(ctx context.Context) bool {
+			return b.send(ctx, member.Phone, availabilityReminder(member.Name, month))
+		})
 	}
 }
 

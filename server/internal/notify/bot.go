@@ -102,6 +102,30 @@ func (b *Bot) send(ctx context.Context, to string, text string) bool {
 }
 
 /**
+ * INVARIANT: once sends a scheduled message at most once per key. The key is claimed before the send, so two ticks
+ * never both send it, and dropped when the send fails, so the next tick tries again. After shutdown begins no new
+ * message starts, and the one already started finishes on a detached context: cut short, it might reach WhatsApp
+ * with its claim dropped. A claim a power cut leaves behind is dropped at the next start (DropUnsentClaims).
+ */
+func (b *Bot) once(ctx context.Context, key string, send func(context.Context) bool) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	if first, err := b.Store.ClaimNotification(ctx, key, b.now()); err != nil || !first {
+		return false
+	}
+	ctx = context.WithoutCancel(ctx)
+	if !send(ctx) {
+		_ = b.Store.UnmarkNotified(ctx, key)
+		return false
+	}
+	if err := b.Store.SettleNotification(ctx, key); err != nil {
+		b.Log.Error("registrar envio", "chave", key, "erro", err)
+	}
+	return true
+}
+
+/**
  * INVARIANT: A send WhatsApp did not confirm in time counts as delivered. Sending it again risks the person getting
  * it twice; if it really got lost, the leaders' "falta responder" alert still catches it.
  */
@@ -290,14 +314,9 @@ func (b *Bot) sendConfirmations(ctx context.Context, upcoming []store.Assignment
 			continue
 		}
 		key := confirmKey(k.ministryID, k.personID, k.key)
-		if first, err := b.Store.MarkNotified(ctx, key, b.now()); err != nil || !first {
-			continue
+		if b.once(ctx, key, func(ctx context.Context) bool { return b.askConfirmation(ctx, slots) }) {
+			asked = append(asked, slots[0].PersonName)
 		}
-		if !b.askConfirmation(ctx, slots) {
-			_ = b.Store.UnmarkNotified(ctx, key)
-			continue
-		}
-		asked = append(asked, slots[0].PersonName)
 	}
 	return asked
 }

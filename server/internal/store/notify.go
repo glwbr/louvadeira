@@ -153,6 +153,37 @@ func (s *Store) UnmarkNotified(ctx context.Context, key string) error {
 }
 
 /**
+ * NOTE: ClaimNotification records a scheduled message as on its way, unless it was already recorded, and reports
+ * whether this call recorded it. SettleNotification marks it sent once WhatsApp takes it; UnmarkNotified drops it
+ * when the send fails.
+ */
+func (s *Store) ClaimNotification(ctx context.Context, key string, now time.Time) (bool, error) {
+	result, err := s.db.ExecContext(ctx, "INSERT INTO notifications (key, sent_at, sending) VALUES (?, ?, 1) ON CONFLICT DO NOTHING", key, formatTime(now))
+	if err != nil {
+		return false, err
+	}
+	n, err := result.RowsAffected()
+	return n == 1, err
+}
+
+func (s *Store) SettleNotification(ctx context.Context, key string) error {
+	_, err := s.db.ExecContext(ctx, "UPDATE notifications SET sending = 0 WHERE key = ?", key)
+	return err
+}
+
+/**
+ * NOTE: DropUnsentClaims forgets the messages a restart or a power cut interrupted on their way out, so the next tick
+ * sends them. It must run before anything sends, since a claim in flight looks the same.
+ */
+func (s *Store) DropUnsentClaims(ctx context.Context) (int64, error) {
+	result, err := s.db.ExecContext(ctx, "DELETE FROM notifications WHERE sending = 1")
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+/**
  * CONSTRAINT: Only slots still held by the person and not yet declined change status, so a late vote cannot touch a
  * slot someone else already covered.
  */

@@ -54,17 +54,13 @@ func (b *Bot) remindInPrivate(ctx context.Context, upcoming []store.AssignmentDe
 		if !b.allows(d.Phone) {
 			continue
 		}
-		mark := fmt.Sprintf("remind:%d:%s:%d", k.person, k.date, k.service)
-		if first, err := b.Store.MarkNotified(ctx, mark, b.now()); err != nil || !first {
-			continue
-		}
 		roles := make([]string, len(slots))
 		for i, slot := range slots {
 			roles[i] = slot.RoleName
 		}
-		if !b.send(ctx, d.Phone, reminderText(d, roles)) {
-			_ = b.Store.UnmarkNotified(ctx, mark)
-		}
+		b.once(ctx, fmt.Sprintf("remind:%d:%s:%d", k.person, k.date, k.service), func(ctx context.Context) bool {
+			return b.send(ctx, d.Phone, reminderText(d, roles))
+		})
 	}
 }
 
@@ -87,14 +83,10 @@ func (b *Bot) remindGroups(ctx context.Context, now time.Time) {
 			if !b.remindDue(sv.Date, sv.StartTime, now) {
 				continue
 			}
-			key := fmt.Sprintf("lineup:%d:%s:%d", m.ID, sv.Date, sv.ServiceID)
-			if first, err := b.Store.MarkNotified(ctx, key, b.now()); err != nil || !first {
-				continue
-			}
 			text, marked := lineupText(ministry, sv)
-			if !b.mention(ctx, m.WhatsAppGroup, text, marked...) {
-				_ = b.Store.UnmarkNotified(ctx, key)
-			}
+			b.once(ctx, fmt.Sprintf("lineup:%d:%s:%d", m.ID, sv.Date, sv.ServiceID), func(ctx context.Context) bool {
+				return b.mention(ctx, m.WhatsAppGroup, text, marked...)
+			})
 		}
 	}
 }
