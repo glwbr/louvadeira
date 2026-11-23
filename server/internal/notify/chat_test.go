@@ -219,3 +219,25 @@ func TestATypedYesAnswersTheLatestQuestionNotAnOlderPoll(t *testing.T) {
 		t.Fatalf("slot = %+v, want declined after saying yes to the absence", slot)
 	}
 }
+
+func TestADayTickedLaterInTheAbsencePollAlsoCounts(t *testing.T) {
+	w := newWorld(t)
+	bassist := w.slotOf("2026-11-19", "Baixo").PersonName
+	w.says(bassist, "não posso dia 19 e 22")
+	poll := lastPoll(t, w.fake.to(w.phone(bassist)))
+	if !poll.multiple {
+		t.Fatalf("poll = %+v, want several choices", poll)
+	}
+	w.tick(poll, false, "😕 Quinta, 19/11")
+	w.tick(poll, false, "😕 Quinta, 19/11", "😕 Domingo, 22/11")
+
+	for _, date := range []string{"2026-11-19", "2026-11-22"} {
+		if slot := w.slotOf(date, "Baixo"); slot.Status != store.AssignmentDeclined {
+			t.Fatalf("%s = %+v, want declined", date, slot)
+		}
+	}
+	absences, _ := w.store.ListUnavailabilities(context.Background(), "2026-11-01", "2026-11-30")
+	if len(absences) != 2 {
+		t.Fatalf("absences = %+v, want one per day", absences)
+	}
+}

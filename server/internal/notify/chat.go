@@ -288,8 +288,8 @@ func hasAction(options []store.PollOption, action string) bool {
 }
 
 /**
- * INVARIANT: A poll the bot sent in reply to a command acts once. Unlike the weekly confirmation, changing the
- * answer later does not undo it; the reply says to talk to the leaders.
+ * INVARIANT: Each day or service ticked in a poll the bot sent in reply to a command acts once, and a day ticked later
+ * acts then. Unlike the weekly confirmation, unticking does not undo it; the reply says to talk to the leaders.
  */
 func (b *Bot) answerChatPoll(ctx context.Context, person store.Person, pollID messenger.MessageID, chosen []store.PollOption) {
 	key := "chat-answer:" + string(pollID)
@@ -297,13 +297,18 @@ func (b *Bot) answerChatPoll(ctx context.Context, person store.Person, pollID me
 	var ranges []store.DateRange
 	keep := false
 	for _, o := range chosen {
+		if o.Action == actionKeep {
+			keep = true
+			continue
+		}
+		if first, err := b.Store.MarkNotified(ctx, key+":"+o.Label, b.now()); err != nil || !first {
+			continue
+		}
 		switch o.Action {
 		case actionDecline:
 			declineIDs = append(declineIDs, o.Assignments...)
 		case actionAbsence:
 			ranges = append(ranges, o.Ranges...)
-		case actionKeep:
-			keep = true
 		}
 	}
 	if len(declineIDs) == 0 && len(ranges) == 0 {
@@ -317,9 +322,7 @@ func (b *Bot) answerChatPoll(ctx context.Context, person store.Person, pollID me
 		}
 		return
 	}
-	if first, err := b.Store.MarkNotified(ctx, key, b.now()); err != nil || !first {
-		return
-	}
+	_, _ = b.Store.MarkNotified(ctx, key, b.now())
 	if len(ranges) > 0 {
 		b.registerAbsence(ctx, person, ranges)
 		return
