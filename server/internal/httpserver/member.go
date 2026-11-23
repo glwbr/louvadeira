@@ -225,8 +225,7 @@ func (d Deps) createMyAbsence(w http.ResponseWriter, r *http.Request) {
 		d.fail(w, err)
 		return
 	}
-	view, err := d.viewUnavailability(r.Context(), u)
-	d.respond(w, http.StatusCreated, view, err)
+	d.respondCreatedAbsence(w, r, u)
 }
 
 func (d Deps) ownAbsence(w http.ResponseWriter, r *http.Request) (store.Unavailability, bool) {

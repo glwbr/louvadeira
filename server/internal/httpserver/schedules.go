@@ -198,8 +198,35 @@ func (d Deps) createUnavailability(w http.ResponseWriter, r *http.Request) {
 		d.fail(w, err)
 		return
 	}
+	d.respondCreatedAbsence(w, r, u)
+}
+
+/**
+ * NOTE: The answer to a new absence carries the swaps it opened, in covers.
+ */
+type createdUnavailability struct {
+	unavailabilityView
+	Covers []store.CoverRequest `json:"covers"`
+}
+
+/**
+ * NOTE: An absence on a day the person serves opens the swaps right away, as one sent on WhatsApp does: substitutes
+ * are invited and the leaders hear it. A failure there leaves the absence saved and the slots in scheduled.
+ */
+func (d Deps) respondCreatedAbsence(w http.ResponseWriter, r *http.Request, u store.Unavailability) {
+	created := createdUnavailability{Covers: []store.CoverRequest{}}
+	if d.Bot != nil {
+		covers, err := d.Bot.DeclinePeriod(r.Context(), u)
+		if err != nil {
+			d.Log.Error("abrir trocas da ausência", "erro", err)
+		}
+		if covers != nil {
+			created.Covers = covers
+		}
+	}
 	view, err := d.viewUnavailability(r.Context(), u)
-	d.respond(w, http.StatusCreated, view, err)
+	created.unavailabilityView = view
+	d.respond(w, http.StatusCreated, created, err)
 }
 
 type affectedSlot struct {

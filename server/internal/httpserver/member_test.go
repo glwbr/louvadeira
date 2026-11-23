@@ -69,12 +69,13 @@ func TestMembersSeeAndAnswerOnlyTheirOwnServices(t *testing.T) {
 	rec := h.do(http.MethodPost, "/api/me/unavailabilities",
 		fmt.Sprintf(`{"personId":%d,"startDate":"2026-12-01","repeat":"weekly","weekday":4,"reason":"estudos"}`, fred.ID))
 	created := decode[struct {
-		ID        int64  `json:"id"`
-		PersonID  int64  `json:"personId"`
-		EndDate   string `json:"endDate"`
-		Scheduled int    `json:"scheduled"`
+		ID        int64                `json:"id"`
+		PersonID  int64                `json:"personId"`
+		EndDate   string               `json:"endDate"`
+		Scheduled int                  `json:"scheduled"`
+		Covers    []store.CoverRequest `json:"covers"`
 	}](t, rec)
-	if created.PersonID != edu.ID || created.EndDate != "" || created.Scheduled != len(slots)-1 {
+	if created.PersonID != edu.ID || created.EndDate != "" || created.Scheduled != 0 || len(created.Covers) != len(slots)-1 {
 		t.Fatalf("created = %+v (slots %d)", created, len(slots))
 	}
 	other, _ := h.store.CreateUnavailability(context.Background(), store.UnavailabilityInput{PersonID: fred.ID, StartDate: "2026-12-24", Reason: store.ReasonTravel})

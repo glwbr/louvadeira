@@ -454,20 +454,18 @@ func TestAbsenceOffersSwapsForTheWholePeriod(t *testing.T) {
 	rec := h.do(http.MethodPost, "/api/unavailabilities",
 		fmt.Sprintf(`{"personId":%d,"startDate":"2026-12-01","endDate":"2026-12-31","reason":"viagem"}`, absent.PersonID))
 	created := decode[struct {
-		ID        int64 `json:"id"`
-		Scheduled int   `json:"scheduled"`
+		ID        int64                `json:"id"`
+		Scheduled int                  `json:"scheduled"`
+		Covers    []store.CoverRequest `json:"covers"`
 	}](t, rec)
-	if created.Scheduled < 2 {
-		t.Fatalf("scheduled = %d, want every December Thursday of %s", created.Scheduled, absent.PersonName)
+	if len(created.Covers) < 2 || created.Scheduled != 0 {
+		t.Fatalf("created = %+v, want a swap for every December Thursday of %s and none left", created, absent.PersonName)
 	}
-	slots := decode[[]map[string]any](t, h.do(http.MethodGet, fmt.Sprintf("/api/unavailabilities/%d/assignments", created.ID), ""))
-	if len(slots) != created.Scheduled {
-		t.Fatalf("assignments = %v", slots)
+	if slots := decode[[]map[string]any](t, h.do(http.MethodGet, fmt.Sprintf("/api/unavailabilities/%d/assignments", created.ID), "")); len(slots) != 0 {
+		t.Fatalf("assignments still held = %v", slots)
 	}
-
-	requests := decode[[]store.CoverRequest](t, h.do(http.MethodPost, fmt.Sprintf("/api/unavailabilities/%d/covers", created.ID), ""))
-	if len(requests) != created.Scheduled {
-		t.Fatalf("requests = %+v", requests)
+	if requests := decode[[]store.CoverRequest](t, h.do(http.MethodPost, fmt.Sprintf("/api/unavailabilities/%d/covers", created.ID), "")); len(requests) != 0 {
+		t.Fatalf("opening the swaps again = %+v", requests)
 	}
 	if len(h.polls.polls) != 1 {
 		t.Fatalf("the other bassist should get one invite for every Thursday, got %v", h.polls.polls)
