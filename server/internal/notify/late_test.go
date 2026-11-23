@@ -80,3 +80,19 @@ func TestDecliningAgainAfterComingBackInvitesTheSubstituteAgain(t *testing.T) {
 		t.Fatalf("slot = %+v", slot)
 	}
 }
+
+func TestSwitchingTheDayOffTakesTheFirstDayBack(t *testing.T) {
+	w := newWorld(t)
+	w.bot.Tick(context.Background())
+	bassist := w.slotOf("2026-11-19", "Baixo").PersonName
+	poll := w.fake.sentPollFor(t, w.phone(bassist), "19/11")
+	w.vote(poll, "😕 Não consigo na quinta (19/11)", false)
+	w.vote(poll, "😕 Não consigo no domingo (22/11)", false)
+
+	if slot := w.slotOf("2026-11-19", "Baixo"); slot.PersonName != bassist || slot.Status != store.AssignmentConfirmed || slot.CoverOpen {
+		t.Fatalf("thursday = %+v, want the bassist back and confirmed", slot)
+	}
+	if slot := w.slotOf("2026-11-22", "Baixo"); slot.Status != store.AssignmentDeclined || !slot.CoverOpen {
+		t.Fatalf("sunday = %+v, want declined with a substitute sought", slot)
+	}
+}

@@ -52,6 +52,9 @@ As opções da enquete de confirmação dependem de quantos cultos ela cobre:
 | 1 | "✅ Vou estar lá" e "😕 Não vou conseguir" |
 | 2 ou mais | "✅ Vou nos dois" ou "✅ Vou em todos", uma opção "😕 Não consigo" para cada dia, e "😕 Não consigo em nenhum" |
 
+Marcar "😕 Não consigo" em um dia confirma a presença nos outros dias da enquete. Quem troca a resposta de um dia para
+outro volta para a escala do primeiro dia, desde que ninguém tenha aceitado o lugar.
+
 ## Substituições
 
 | Quando | Para quem | Mensagem |

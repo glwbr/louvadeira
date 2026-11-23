@@ -548,7 +548,27 @@ func (b *Bot) applyVote(ctx context.Context, vote messenger.Vote) {
 		b.confirm(ctx, person, option.Assignments, true)
 	case actionDecline:
 		b.declineOwn(ctx, person, option.Assignments)
+		// NOTE: "Não consigo no domingo" also says the person goes on the other days, and switching from another day
+		// takes that day's absence back.
+		if rest := otherSlots(poll.Options, option.Assignments); len(rest) > 0 {
+			b.confirm(ctx, person, rest, false)
+		}
 	}
+}
+
+func otherSlots(options []store.PollOption, declined []int64) []int64 {
+	var rest []int64
+	for _, o := range options {
+		if o.Action != actionConfirm {
+			continue
+		}
+		for _, id := range o.Assignments {
+			if !containsID(declined, id) && !containsID(rest, id) {
+				rest = append(rest, id)
+			}
+		}
+	}
+	return rest
 }
 
 func (b *Bot) confirm(ctx context.Context, person store.Person, assignments []int64, reply bool) {
