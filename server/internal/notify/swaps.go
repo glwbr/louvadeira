@@ -724,23 +724,38 @@ func (b *Bot) retryInvites(ctx context.Context) {
 		b.Log.Error("buscar convites não enviados", "erro", err)
 		return
 	}
-	people, byPerson := groupBy(unsent, func(u store.UnsentInvite) int64 { return u.PersonID })
-	for _, personID := range people {
-		person, ok := b.person(ctx, personID)
+	type pending struct {
+		invite store.UnsentInvite
+		detail store.AssignmentDetail
+	}
+	var live []pending
+	for _, u := range unsent {
+		d, err := b.Store.AssignmentDetail(ctx, u.AssignmentID)
+		if err != nil {
+			continue
+		}
+		if !b.Upcoming(d) {
+			// NOTE: A service already over needs nobody anymore, so its swap closes without news.
+			_, _ = b.Store.RefuseCover(ctx, u.RequestID, u.PersonID, b.now())
+			_ = b.Store.CloseCoverRequest(ctx, u.RequestID, b.now())
+			continue
+		}
+		live = append(live, pending{u, d})
+	}
+	type invitee struct{ person, ministry int64 }
+	invitees, byInvitee := groupBy(live, func(p pending) invitee { return invitee{p.invite.PersonID, p.detail.MinistryID} })
+	for _, k := range invitees {
+		person, ok := b.person(ctx, k.person)
 		var swaps []*swap
 		var expired []int64
-		for _, u := range byPerson[personID] {
-			d, err := b.Store.AssignmentDetail(ctx, u.AssignmentID)
-			if err != nil {
+		for _, p := range byInvitee[k] {
+			if !ok || b.now().Sub(p.invite.OpenedAt) >= retryUntil || !b.stillFree(ctx, p.detail, k.person) {
+				expired = append(expired, p.invite.RequestID)
 				continue
 			}
-			if !ok || !b.Upcoming(d) || b.now().Sub(u.OpenedAt) >= retryUntil {
-				expired = append(expired, u.RequestID)
-				continue
-			}
-			swaps = append(swaps, &swap{detail: d, request: u.RequestID, late: u.Late})
+			swaps = append(swaps, &swap{detail: p.detail, request: p.invite.RequestID, late: p.invite.Late})
 		}
-		b.refuseCovers(ctx, store.Person{ID: personID}, expired, false)
+		b.refuseCovers(ctx, store.Person{ID: k.person}, expired, false)
 		offers := groupOffers(swaps)
 		for start := 0; start < len(offers); start += maxPollSlots {
 			chunk := offers[start:min(start+maxPollSlots, len(offers))]
@@ -756,4 +771,18 @@ func (b *Bot) retryInvites(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// NOTE: Someone who became busy or away on that day since the first try is no longer asked.
+func (b *Bot) stillFree(ctx context.Context, d store.AssignmentDetail, personID int64) bool {
+	candidates, err := b.Store.CoverCandidates(ctx, d.AssignmentID)
+	if err != nil {
+		return false
+	}
+	for _, c := range candidates {
+		if c.ID == personID {
+			return true
+		}
+	}
+	return false
 }

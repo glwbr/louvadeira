@@ -332,6 +332,36 @@ func TestADayOffInThePollKeepsAnAbsenceRegisteredElsewhere(t *testing.T) {
 	}
 }
 
+func TestAnInvitationStillUnsentWhenTheServicePassesClosesQuietly(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	slot := w.slotOf("2026-11-19", "Baixo")
+	other := map[string]string{"Edu": "Fred", "Fred": "Edu"}[slot.PersonName]
+	w.fake.fail = func(m message) error {
+		if m.to == w.phone(other) {
+			return errors.New("websocket EOF")
+		}
+		return nil
+	}
+	if _, err := w.bot.Decline(ctx, []int64{slot.AssignmentID}, false); err != nil {
+		t.Fatal(err)
+	}
+	w.fake.fail = nil
+	w.fake.reset()
+
+	w.clock = time.Date(2026, 11, 20, 10, 0, 0, 0, saoPaulo)
+	w.bot.Tick(ctx)
+	if containsText(w.fake.to(w.phone("Líder")), "Ninguém conseguiu substituir") {
+		t.Fatal("alerted about a service that already happened")
+	}
+	if polls := pollsAbout(w.fake.to(w.phone(other)), "19/11"); polls != 0 {
+		t.Fatalf("%s was invited to a past service", other)
+	}
+	if s := w.slotOf("2026-11-19", "Baixo"); s.CoverOpen {
+		t.Fatalf("slot = %+v, want the swap closed", s)
+	}
+}
+
 func TestSomeoneNeverReachedIsNotReleasedNorListedAsInvited(t *testing.T) {
 	w := newWorld(t)
 	ctx := context.Background()
@@ -358,5 +388,35 @@ func TestSomeoneNeverReachedIsNotReleasedNorListedAsInvited(t *testing.T) {
 	w.vote(poll, "✅ Vou nos dois", false)
 	if len(w.fake.to(w.phone(other))) != 0 {
 		t.Fatalf("%s got %+v about an invitation never sent", other, w.fake.to(w.phone(other)))
+	}
+}
+
+func TestARetryLeavesOutWhoBecameAway(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	slot := w.slotOf("2026-11-19", "Baixo")
+	other := map[string]string{"Edu": "Fred", "Fred": "Edu"}[slot.PersonName]
+	w.fake.fail = func(m message) error {
+		if m.to == w.phone(other) {
+			return errors.New("websocket EOF")
+		}
+		return nil
+	}
+	if _, err := w.bot.Decline(ctx, []int64{slot.AssignmentID}, false); err != nil {
+		t.Fatal(err)
+	}
+	w.fake.fail = nil
+	if _, err := w.store.CreateUnavailability(ctx, store.UnavailabilityInput{PersonID: w.people[other].ID, StartDate: "2026-11-19", EndDate: "2026-11-19", Reason: store.ReasonTravel}); err != nil {
+		t.Fatal(err)
+	}
+	w.fake.reset()
+
+	w.clock = w.clock.Add(5 * time.Minute)
+	w.bot.Tick(ctx)
+	if pollsAbout(w.fake.to(w.phone(other)), "19/11") != 0 {
+		t.Fatalf("%s was invited although away", other)
+	}
+	if !containsText(w.fake.to(w.phone("Líder")), "Ninguém conseguiu substituir") {
+		t.Fatalf("leader = %+v", w.fake.to(w.phone("Líder")))
 	}
 }
