@@ -503,3 +503,17 @@ func TestCommunionIsChosenOnceForTheChurch(t *testing.T) {
 		t.Fatalf("unknown service: %d", rec.Code)
 	}
 }
+
+func TestWritesFromAnotherSiteAreTurnedAway(t *testing.T) {
+	h := newHarness(t)
+	h.signInAdmin()
+	if rec := h.do(http.MethodPost, "/api/auth/logout", "", "Sec-Fetch-Site", "cross-site"); rec.Code != http.StatusForbidden {
+		t.Fatalf("cross-site write: %d", rec.Code)
+	}
+	if rec := h.do(http.MethodGet, "/api/people", "", "Sec-Fetch-Site", "cross-site"); rec.Code != http.StatusOK {
+		t.Fatalf("cross-site read: %d", rec.Code)
+	}
+	if rec := h.do(http.MethodPost, "/api/services", `{"name":"Culto de sábado","weekday":6,"startTime":"18:00"}`, "Sec-Fetch-Site", "same-origin"); rec.Code != http.StatusCreated && rec.Code != http.StatusOK {
+		t.Fatalf("same-origin write: %d %s", rec.Code, rec.Body)
+	}
+}

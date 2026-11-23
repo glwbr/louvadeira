@@ -128,7 +128,14 @@ func New(d Deps) http.Handler {
 		writeError(w, http.StatusNotFound, "rota não encontrada")
 	})
 	mux.Handle("/", spa(d.UI))
-	return mux
+
+	// NOTE: Turns away writes a browser makes from another site with the leader's cookie. Requests without the browser
+	// headers, like the CLI with the admin token, carry no cookie to abuse and pass.
+	protection := http.NewCrossOriginProtection()
+	protection.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, http.StatusForbidden, "pedido de outro site recusado")
+	}))
+	return protection.Handler(mux)
 }
 
 func (d Deps) health(w http.ResponseWriter, r *http.Request) {
@@ -334,8 +341,7 @@ func (d Deps) today() string {
 }
 
 /**
- * CONSTRAINT: Requests must be JSON. Together with SameSite=Lax cookies this keeps other sites from posting forms
- * into the API with the leader's session.
+ * CONSTRAINT: Requests with a body must be JSON, which a form on another site cannot send.
  */
 func decodeJSON(w http.ResponseWriter, r *http.Request, into any) bool {
 	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
